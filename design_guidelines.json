@@ -1,0 +1,257 @@
+{
+  "project_name": "Mukman Technologies Intranet Portal",
+  "archetype": "THE PERFORMANCE PRO & SWISS HYBRID (Tactical Modern Enterprise)",
+  "context_type": "DASHBOARDS & ADMIN PANELS + INTRANET",
+  "theme": "Light mode primary with crisp dark mode toggle and tinted obsidian/slate accents",
+  "typography": {
+    "font_family_headings": "Outfit, Cabinet Grotesk, -apple-system, sans-serif",
+    "font_family_body": "IBM Plex Sans, -apple-system, sans-serif",
+    "font_family_mono": "JetBrains Mono, Menlo, monospace",
+    "rules": {
+      "H1": "text-4xl sm:text-5xl font-bold tracking-tight text-slate-900 dark:text-white",
+      "H2": "text-2xl sm:text-3xl font-semibold tracking-tight text-slate-900 dark:text-white",
+      "H3": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-800 dark:text-slate-100",
+      "H4": "text-lg sm:text-xl font-medium text-slate-800 dark:text-slate-200",
+      "body": "text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed",
+      "overline_badge": "text-xs font-semibold tracking-[0.15em] uppercase px-2.5 py-1 rounded-full",
+      "forbidden_heading_fonts": ["Inter", "Space Grotesk", "Roboto", "Comic Sans"]
+    }
+  },
+  "colors": {
+    "primary": {
+      "main": "#0F172A",
+      "hover": "#1E293B",
+      "foreground": "#FFFFFF",
+      "ring": "#38BDF8"
+    },
+    "brand_accents": {
+      "mukman_group": {
+        "name": "Mukman Technologies Holding",
+        "primary": "#0F172A",
+        "accent": "#38BDF8",
+        "pill": "bg-slate-900 text-cyan-400 border border-cyan-500/30"
+      },
+      "schoolcab": {
+        "name": "SchoolCab (School Commute Mobility)",
+        "primary": "#F59E0B",
+        "secondary": "#D97706",
+        "accent": "#FEF3C7",
+        "badge": "bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/40"
+      },
+      "cabzee": {
+        "name": "Cabzee (Fixed-Route Office Commute)",
+        "primary": "#0284C7",
+        "secondary": "#0369A1",
+        "accent": "#E0F2FE",
+        "badge": "bg-sky-100 text-sky-900 dark:bg-sky-950/60 dark:text-sky-300 border border-sky-300/40"
+      },
+      "mukman_advisory": {
+        "name": "Mukman Advisory (Financial Services)",
+        "primary": "#0D9488",
+        "secondary": "#0F766E",
+        "accent": "#CCFBF1",
+        "badge": "bg-teal-100 text-teal-900 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-300/40"
+      }
+    },
+    "surface": {
+      "light_bg": "#F8FAFC",
+      "light_card": "#FFFFFF",
+      "light_card_border": "#E2E8F0",
+      "dark_bg": "#0B0F19",
+      "dark_card": "#111827",
+      "dark_card_border": "#1F2937"
+    },
+    "status": {
+      "approved": "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-300/30",
+      "pending": "bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-300/30",
+      "rejected": "bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-300/30",
+      "penalty": "bg-red-100 text-red-900 dark:bg-red-950/60 dark:text-red-300 border border-red-400/40"
+    }
+  },
+  "layout_and_navigation": {
+    "header": {
+      "height": "h-16",
+      "style": "sticky top-0 z-40 backdrop-blur-xl bg-white/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800",
+      "elements": [
+        "Brand Logo & Mukman Group switcher",
+        "Search bar with shortcut (Cmd+K) for employee directory, policies, reviews",
+        "Notification Bell badge with real-time counter & dropdown",
+        "WhatsApp reminder quick trigger preview modal",
+        "Role switcher (Employee, Approver/Manager, Portal Admin) for easy test drive",
+        "User profile avatar with status indicator"
+      ]
+    },
+    "sidebar": {
+      "desktop": "w-64 border-r border-slate-200 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur-md p-4 flex flex-col justify-between",
+      "mobile": "drawer overlay with hamburger toggle",
+      "nav_sections": [
+        {
+          "label": "CORE PORTAL",
+          "items": [
+            { "id": "overview", "name": "Holding Vision & Brands", "icon": "LayoutGrid" },
+            { "id": "metrics", "name": "Valuation & Market Cap", "icon": "TrendingUp" },
+            { "id": "achievements", "name": "Milestones & Achievements", "icon": "Award" },
+            { "id": "benefits", "name": "Employee Benefits & Perks", "icon": "Sparkles" }
+          ]
+        },
+        {
+          "label": "WORK & COMPLIANCE",
+          "items": [
+            { "id": "timesheets", "name": "Timesheet & Calendar", "icon": "Calendar" },
+            { "id": "reviews", "name": "Periodic Reviews (W/M/Q/Y)", "icon": "FileCheck" },
+            { "id": "feedback", "name": "360° Feedback & Grievances", "icon": "MessageSquareText" },
+            { "id": "orgchart", "name": "Org Chart & Hierarchy", "icon": "Network" }
+          ]
+        },
+        {
+          "label": "OPERATIONS & CONTROL",
+          "items": [
+            { "id": "notifications", "name": "Notification & WhatsApp Hub", "icon": "BellRing" },
+            { "id": "admin", "name": "Admin Management Console", "icon": "ShieldAlert" }
+          ]
+        }
+      ]
+    }
+  },
+  "sections_breakdown": {
+    "vision_and_brands": {
+      "container": "grid grid-cols-1 md:grid-cols-3 gap-6",
+      "cards": [
+        {
+          "brand": "SchoolCab",
+          "tagline": "Safe, Geotagged School Commute Mobility",
+          "stats": "45,000+ Students Daily • 99.8% On-time Arrival • 320 Partner Schools",
+          "color_border": "border-amber-400/40 hover:border-amber-500",
+          "image": "https://images.unsplash.com/photo-1786684409967-d0368efc57e2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwzfHxzY2hvb2wlMjBidXMlMjB5ZWxsb3clMjBtb2JpbGl0eSUyMHRyYW5zcG9ydGF0aW9ufGVufDB8fHx8MTc4ODcxNDgwMnww&ixlib=rb-4.1.0&q=85"
+        },
+        {
+          "brand": "Cabzee",
+          "tagline": "Fixed-Route AI Optimized Corporate Commute",
+          "stats": "120,000+ Shifts Moved • 42 Corporate Hubs • 34% Lower Carbon Footprint",
+          "color_border": "border-sky-400/40 hover:border-sky-500",
+          "image": "https://images.unsplash.com/photo-1780296269675-169390638617?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxleGVjdXRpdmUlMjBjYXIlMjBidXNpbmVzcyUyMHRyYXZlbHxlbnwwfHx8fDE3ODg3MTQ4MDJ8MA&ixlib=rb-4.1.0&q=85"
+        },
+        {
+          "brand": "Mukman Advisory",
+          "tagline": "Strategic Capital & Enterprise Financial Architecture",
+          "stats": "$180M+ Capital Structured • 85+ Enterprise Advisory Clients • M&A Execution",
+          "color_border": "border-teal-400/40 hover:border-teal-500",
+          "image": "https://images.unsplash.com/photo-1556761175-b413da4baf72?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHw0fHxjb3Jwb3JhdGUlMjB0ZWFtJTIwd29ya2luZyUyMG9mZmljZXxlbnwwfHx8fDE3ODg3MTQ4MDJ8MA&ixlib=rb-4.1.0&q=85"
+        }
+      ]
+    },
+    "valuation_and_market_cap": {
+      "display": "Interactive charts using Recharts + metric cards with trend indicators",
+      "metrics": [
+        { "title": "Group Valuation (Q2 2026)", "value": "₹1,480 Cr ($178M)", "growth": "+41.2% YoY" },
+        { "title": "Total Addressable Market (TAM)", "value": "$14.2B", "detail": "India Tier 1 & 2 Urban Mobility & Fleet Tech" },
+        { "title": "Total Daily Commuters", "value": "165,000+", "detail": "Across SchoolCab & Cabzee Networks" },
+        { "title": "Active Financial Mandates", "value": "28 Active", "detail": "Mukman Advisory Portfolio" }
+      ]
+    },
+    "timesheet_system": {
+      "features": [
+        "Full month interactive calendar view with color-coded day states (Logged, Submitted, Approved, Missing, Penalty Warning)",
+        "Daily shift log form: Project/Brand selector, Task detail, Hours worked, Overtime flag",
+        "Approver Flow: Manager view with Bulk Approve, Reject with Comments, Penalty waiver requests",
+        "Automatic penalty detection: Flags missing entries > 48h based on configured penalty rules",
+        "Export to CSV/PDF capability"
+      ]
+    },
+    "periodic_reviews": {
+      "cycles": ["Weekly Standup Sync", "Monthly Performance Review", "Quarterly OKR Review", "Annual Appraisal & Compensation"],
+      "features": [
+        "Self Assessment Form (Accomplishments, Blockers, Goal Progress rating 1-5)",
+        "Manager Evaluation & KPI Scoring",
+        "Review history timeline with status badges and PDF summary view"
+      ]
+    },
+    "org_chart": {
+      "features": [
+        "Interactive hierarchy visualization showing Mukman Group leadership down to SchoolCab, Cabzee, and Advisory leads",
+        "Collapsible nodes with avatar, role, department, reportees count, and quick direct message/WhatsApp trigger",
+        "Search filter by department (Fleet Ops, Tech & Product, Finance, School Relations, HR)"
+      ]
+    },
+    "notification_center_and_whatsapp": {
+      "features": [
+        "Notification Center with tabs: All, Approvals, System Alerts, Broadcast Announcements",
+        "Mocked WhatsApp Reminder Hub: Pre-formatted WhatsApp message preview cards (e.g., 'Reminder: Timesheet due for Week 28', 'Cabzee fleet briefing', 'Quarterly review submission window open')",
+        "Actionable direct send simulation (with visual toast confirming mock WhatsApp API dispatch)"
+      ]
+    },
+    "admin_panel": {
+      "features": [
+        "Employee Management (Add, Edit, Deactivate, Role Assignment: Admin/Manager/Employee)",
+        "Reporting Hierarchy Mapper (Drag or select reporting manager)",
+        "Content Management System for Homepage: Vision, Achievements, Market Cap, Benefits with 'Enhance with AI' rewrite feature",
+        "Penalty Rules Engine: Configurable late submission cut-off, monetary/leave penalty calculation rules, grace days",
+        "Broadcast Popup Announcement Creator: Publish urgent company-wide alerts that appear as popups on employee dashboards"
+      ]
+    }
+  },
+  "image_urls": {
+    "corporate_team_meeting": {
+      "url": "https://images.unsplash.com/photo-1522071820081-009f0129c71c?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwxfHxjb3Jwb3JhdGUlMjB0ZWFtJTIwd29ya2luZyUyMG9mZmljZXxlbnwwfHx8fDE3ODg3MTQ4MDJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Mukman Group cross-brand leadership and strategy team meeting",
+      "placement": "Homepage vision hero banner & Achievements showcase"
+    },
+    "school_cab_bus": {
+      "url": "https://images.unsplash.com/photo-1786684409967-d0368efc57e2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1ODF8MHwxfHNlYXJjaHwzfHxzY2hvb2wlMjBidXMlMjB5ZWxsb3clMjBtb2JpbGl0eSUyMHRyYW5zcG9ydGF0aW9ufGVufDB8fHx8MTc4ODcxNDgwMnww&ixlib=rb-4.1.0&q=85",
+      "description": "SchoolCab dedicated modern fleet transit",
+      "placement": "SchoolCab brand card on Intranet homepage and brand filter"
+    },
+    "cabzee_corporate_mobility": {
+      "url": "https://images.unsplash.com/photo-1780296269675-169390638617?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDQ2NDF8MHwxfHNlYXJjaHwxfHxleGVjdXRpdmUlMjBjYXIlMjBidXNpbmVzcyUyMHRyYXZlbHxlbnwwfHx8fDE3ODg3MTQ4MDJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Cabzee executive and corporate commuter route vehicle",
+      "placement": "Cabzee brand card and commute operations section"
+    },
+    "mukman_financial_advisory": {
+      "url": "https://images.unsplash.com/photo-1556761175-b413da4baf72?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHw0fHxjb3Jwb3JhdGUlMjB0ZWFtJTIwd29ya2luZyUyMG9mZmljZXxlbnwwfHx8fDE3ODg3MTQ4MDJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Mukman Advisory financial consulting and investment boardroom",
+      "placement": "Mukman Advisory brand card & Valuation analytics section"
+    },
+    "modern_workplace_office": {
+      "url": "https://images.unsplash.com/photo-1606857521015-7f9fcf423740?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMzJ8MHwxfHNlYXJjaHwzfHxjb3Jwb3JhdGUlMjB0ZWFtJTIwd29ya2luZyUyMG9mZmljZXxlbnwwfHx8fDE3ODg3MTQ4MDJ8MA&ixlib=rb-4.1.0&q=85",
+      "description": "Mukman Technologies modern headquarters open workspace",
+      "placement": "Employee benefits, cultural gallery, and login screen split view"
+    }
+  },
+  "testing_attributes_convention": {
+    "login": {
+      "email_input": "data-testid=\"login-email-input\"",
+      "password_input": "data-testid=\"login-password-input\"",
+      "role_select": "data-testid=\"login-role-select\"",
+      "submit_button": "data-testid=\"login-submit-button\""
+    },
+    "navigation": {
+      "sidebar_link": "data-testid=\"sidebar-nav-[section-id]\"",
+      "role_switcher": "data-testid=\"header-role-switcher\"",
+      "notifications_trigger": "data-testid=\"header-notifications-button\"",
+      "whatsapp_hub_trigger": "data-testid=\"header-whatsapp-hub-button\""
+    },
+    "timesheet": {
+      "date_cell": "data-testid=\"timesheet-day-[YYYY-MM-DD]\"",
+      "submit_btn": "data-testid=\"timesheet-submit-button\"",
+      "approve_btn": "data-testid=\"timesheet-approve-button-[id]\"",
+      "reject_btn": "data-testid=\"timesheet-reject-button-[id]\"",
+      "hours_input": "data-testid=\"timesheet-hours-input\""
+    },
+    "admin": {
+      "enhance_ai_btn": "data-testid=\"admin-ai-enhance-button-[field]\"",
+      "save_content_btn": "data-testid=\"admin-save-content-button\"",
+      "add_employee_btn": "data-testid=\"admin-add-employee-button\"",
+      "save_penalty_rules_btn": "data-testid=\"admin-save-penalty-rules-button\"",
+      "broadcast_popup_btn": "data-testid=\"admin-broadcast-popup-button\""
+    }
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "Never use generic centered layouts or unstyled default HTML elements.",
+    "Ensure all buttons have active/hover/focus states with smooth micro-interactions.",
+    "Do not use transparent backgrounds for header and dropdowns; use backdrop-blur with tinted solid background.",
+    "Include rich pre-loaded mock data representing Mukman Group, SchoolCab, Cabzee, and Mukman Advisory across India operations (Delhi NCR, Bengaluru, Mumbai, Pune).",
+    "Implement the 'Enhance with AI' mock feature with convincing prompt variations (Tone: Corporate, Inspiring, High Impact, Concise) and simulated streaming/instant smart rewriting.",
+    "Provide Role Switching in the header so evaluators can test Employee, Manager/Approver, and Admin experiences seamlessly.",
+    "Ensure Sonner toasts are used for timesheet submits, approvals, penalty adjustments, and WhatsApp reminder dispatches."
+  ]
+}

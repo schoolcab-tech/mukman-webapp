@@ -1,0 +1,243 @@
+import { useEffect, useMemo, useState } from "react";
+import api, { errText } from "@/lib/api";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { ChevronLeft, ChevronRight, AlertTriangle, Check, X as XIcon } from "lucide-react";
+
+const STATUS_STYLE = {
+  approved: "bg-emerald-100 text-emerald-800 border-emerald-300/50",
+  pending: "bg-amber-100 text-amber-800 border-amber-300/50",
+  rejected: "bg-rose-100 text-rose-800 border-rose-300/50",
+};
+
+function dayState(entry) {
+  if (!entry) return null;
+  return entry.approval_status;
+}
+
+export default function Timesheet() {
+  const today = new Date();
+  const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
+  const [entries, setEntries] = useState({});
+  const [approvals, setApprovals] = useState([]);
+  const [rules, setRules] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState({ status: "present", hours: 8, achievements: "" });
+  const [saving, setSaving] = useState(false);
+  const [comments, setComments] = useState({});
+
+  const load = () => {
+    api.get(`/timesheets/my?month=${month}`).then((r) => {
+      const map = {};
+      r.data.forEach((e) => { map[e.date] = e; });
+      setEntries(map);
+    }).catch(() => {});
+    api.get("/timesheets/approvals").then((r) => setApprovals(r.data)).catch(() => {});
+    api.get("/penalty-rules").then((r) => setRules(r.data.filter((x) => x.enabled))).catch(() => {});
+  };
+
+  useEffect(load, [month]);
+
+  const grid = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const first = new Date(y, m - 1, 1);
+    const days = new Date(y, m, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < first.getDay(); i++) cells.push(null);
+    for (let d = 1; d <= days; d++) cells.push(`${month}-${String(d).padStart(2, "0")}`);
+    return cells;
+  }, [month]);
+
+  const shiftMonth = (delta) => {
+    const [y, m] = month.split("-").map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+
+  const openDay = (date) => {
+    const e = entries[date];
+    setForm(e ? { status: e.status, hours: e.hours || 8, achievements: e.achievements || "" } : { status: "present", hours: 8, achievements: "" });
+    setSelected(date);
+  };
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      await api.post("/timesheets", { date: selected, ...form });
+      toast.success(`Timesheet for ${selected} submitted for approval`);
+      setSelected(null);
+      load();
+    } catch (e) {
+      toast.error(errText(e.response?.data?.detail));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const review = async (id, action) => {
+    try {
+      await api.post(`/timesheets/${id}/${action}`, { comment: comments[id] || "" });
+      toast.success(`Timesheet ${action}`);
+      load();
+    } catch (e) {
+      toast.error(errText(e.response?.data?.detail));
+    }
+  };
+
+  const monthLabel = new Date(`${month}-02`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
+  const todayIso = new Date().toLocaleDateString("en-CA");
+
+  return (
+    <div className="space-y-8" data-testid="timesheet-page">
+      <div>
+        <div className="text-xs font-semibold tracking-[0.15em] uppercase text-slate-400">WORK & COMPLIANCE</div>
+        <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-slate-900 mt-2">Timesheet & Calendar</h1>
+        <p className="text-sm text-slate-500 mt-2 max-w-2xl">Log every working day with your key achievements, or mark absent/leave. Your immediate senior approves each entry.</p>
+      </div>
+
+      {rules.length > 0 && (
+        <div className="grid sm:grid-cols-2 gap-3" data-testid="timesheet-penalty-rules">
+          {rules.map((r) => (
+            <div key={r.key} className="flex gap-3 items-start rounded-xl border border-red-300/40 bg-red-50 p-4">
+              <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="text-sm font-semibold text-red-900">{r.label} — {r.percent}% {r.applies_to === "esop" ? "ownership/ESOP" : "salary"} impact</div>
+                <div className="text-xs text-red-700 mt-1">{r.description}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7">
+        <div className="flex items-center justify-between mb-5">
+          <h2 className="font-display text-xl font-semibold text-slate-900" data-testid="timesheet-month-label">{monthLabel}</h2>
+          <div className="flex gap-2">
+            <Button data-testid="timesheet-prev-month" variant="outline" size="icon" onClick={() => shiftMonth(-1)}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button data-testid="timesheet-next-month" variant="outline" size="icon" onClick={() => shiftMonth(1)}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+        </div>
+        <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold tracking-wider text-slate-400 mb-2">
+          {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => <div key={d}>{d}</div>)}
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {grid.map((date, i) => {
+            if (!date) return <div key={`blank-${i}`} />;
+            const e = entries[date];
+            const st = dayState(e);
+            const isFuture = date > todayIso;
+            const missed = !e && !isFuture && new Date(date).getDay() !== 0;
+            return (
+              <button
+                key={date}
+                data-testid={`timesheet-day-${date}`}
+                onClick={() => !isFuture && openDay(date)}
+                disabled={isFuture}
+                className={`aspect-square rounded-xl border text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed ${
+                  st ? STATUS_STYLE[st] : missed ? "border-red-300/60 bg-red-50/60 text-red-700 hover:bg-red-50" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <span>{Number(date.slice(-2))}</span>
+                {e && <span className="text-[9px] uppercase tracking-wide">{e.status === "present" ? st : e.status}</span>}
+                {missed && <span className="text-[9px] uppercase tracking-wide">missing</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-4 mt-5 text-xs text-slate-500">
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-200 border border-emerald-400/50" /> Approved</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-200 border border-amber-400/50" /> Pending approval</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-rose-200 border border-rose-400/50" /> Rejected</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 border border-red-400/60" /> Missing</span>
+        </div>
+      </div>
+
+      {approvals.length > 0 && (
+        <section data-testid="timesheet-approvals-section">
+          <h2 className="font-display text-xl font-semibold text-slate-900 mb-4">Pending approvals from your team ({approvals.length})</h2>
+          <div className="space-y-3">
+            {approvals.map((a) => (
+              <div key={a.id} className="bg-white rounded-2xl border border-slate-200 p-5" data-testid={`timesheet-approval-card-${a.id}`}>
+                <div className="flex flex-wrap items-center gap-3 justify-between">
+                  <div>
+                    <div className="font-semibold text-slate-900">{a.user_name} — {a.date}</div>
+                    <div className="text-xs text-slate-500 mt-0.5 capitalize">{a.status} · {a.hours || 0}h logged</div>
+                  </div>
+                  <span className="text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300/40 font-semibold uppercase tracking-wide">Pending</span>
+                </div>
+                {a.achievements && <p className="text-sm text-slate-600 mt-3 whitespace-pre-line bg-slate-50 rounded-xl p-3">{a.achievements}</p>}
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <Input
+                    placeholder="Comment (optional)"
+                    value={comments[a.id] || ""}
+                    onChange={(e) => setComments({ ...comments, [a.id]: e.target.value })}
+                    data-testid={`timesheet-comment-input-${a.id}`}
+                    className="sm:flex-1"
+                  />
+                  <div className="flex gap-2">
+                    <Button data-testid={`timesheet-approve-button-${a.id}`} onClick={() => review(a.id, "approve")} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+                      <Check className="h-4 w-4 mr-1" /> Approve
+                    </Button>
+                    <Button data-testid={`timesheet-reject-button-${a.id}`} onClick={() => review(a.id, "reject")} variant="outline" className="border-rose-300 text-rose-600 hover:bg-rose-50">
+                      <XIcon className="h-4 w-4 mr-1" /> Reject
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
+        <DialogContent data-testid="timesheet-entry-dialog">
+          <DialogHeader>
+            <DialogTitle className="font-display">Timesheet — {selected}</DialogTitle>
+          </DialogHeader>
+          {entries[selected]?.approval_status === "approved" ? (
+            <p className="text-sm text-slate-500">This day is approved and locked.</p>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                  <SelectTrigger data-testid="timesheet-status-select"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Present</SelectItem>
+                    <SelectItem value="absent">Absent</SelectItem>
+                    <SelectItem value="leave">Leave</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.status === "present" && (
+                <div className="space-y-2">
+                  <Label>Hours worked</Label>
+                  <Input type="number" min="0" max="24" step="0.5" data-testid="timesheet-hours-input" value={form.hours}
+                    onChange={(e) => setForm({ ...form, hours: Number(e.target.value) })} />
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label>{form.status === "present" ? "Key achievements of the day" : "Reason / note"}</Label>
+                <Textarea data-testid="timesheet-achievements-input" rows={4} value={form.achievements}
+                  onChange={(e) => setForm({ ...form, achievements: e.target.value })}
+                  placeholder="What did you accomplish today at Mukman?" />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            {entries[selected]?.approval_status !== "approved" && (
+              <Button data-testid="timesheet-submit-button" onClick={submit} disabled={saving} className="bg-slate-900 hover:bg-slate-800 text-white">
+                {saving ? "Submitting…" : "Submit for approval"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -1,0 +1,15 @@
+crons:
+  - name: timesheet-reminder
+    description: "Daily 7pm IST WhatsApp-style reminder to employees who have not filled today's timesheet"
+    cron: "0 19 * * *"
+    timezone: "Asia/Kolkata"
+    endpoint: "{{BASE_URL}}/api/cron/timesheet-reminders"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+  - name: weekly-review-nudge
+    description: "Tuesday 10am IST reminder for employees missing their weekly review summary"
+    cron: "0 10 * * 2"
+    timezone: "Asia/Kolkata"
+    endpoint: "{{BASE_URL}}/api/cron/weekly-review-reminder"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
