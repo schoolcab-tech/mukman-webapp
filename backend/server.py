@@ -56,9 +56,11 @@ def serialize(doc):
     doc = dict(doc)
     doc["id"] = str(doc.pop("_id"))
     doc.pop("password_hash", None)
-    for k in ("reports_to", "approver_id", "user_id", "current_approver_id", "current_owner_id", "reviewed_by", "updated_by"):
+    for k in ("reports_to", "approver_id", "user_id", "current_approver_id", "current_owner_id", "reviewed_by", "updated_by", "also_reports_to"):
         if isinstance(doc.get(k), ObjectId):
             doc[k] = str(doc[k])
+        elif isinstance(doc.get(k), list):
+            doc[k] = [str(x) if isinstance(x, ObjectId) else x for x in doc[k]]
     for list_key in ("chain", "history"):
         if isinstance(doc.get(list_key), list):
             for entry in doc[list_key]:
@@ -191,20 +193,40 @@ async def ai_enhance(req: EnhanceReq, admin=Depends(require_admin)):
 @api_router.get("/org-chart")
 async def org_chart(user=Depends(get_current_user)):
     users = await db.users.find({"active": True}).to_list(500)
-    return [
+    people = [
         {"id": str(u["_id"]), "name": u["name"], "title": u.get("title", ""), "department": u.get("department", ""),
          "role": u["role"], "reports_to": str(u["reports_to"]) if u.get("reports_to") else None,
+         "also_reports_to": [str(x) for x in u.get("also_reports_to", [])],
          "esop_applicable": u.get("esop_applicable", False)}
         for u in users
     ]
+    founder = next((u for u in users if u["role"] == "admin" and not u.get("reports_to")), None)
+    virtual = []
+    async for v in db.org_nodes.find({}):
+        pid = None
+        if v.get("parent_email") == "founder":
+            pid = str(founder["_id"]) if founder else None
+        elif v.get("parent_email"):
+            m = await db.users.find_one({"email": v["parent_email"]})
+            pid = str(m["_id"]) if m else None
+        virtual.append({"id": v["key"], "name": v["name"], "title": v.get("title", ""),
+                        "kind": v.get("kind", "open"), "reports_to": pid, "virtual": True})
+    return {"people": people, "virtual": virtual}
 
 
 # ---------------- Timesheets ----------------
 
+class TaskEntry(BaseModel):
+    category: str
+    hours: float = 0
+    note: str = ""
+
+
 class TimesheetReq(BaseModel):
     date: str
     status: str
-    hours: Optional[float] = 8
+    tasks: List[TaskEntry] = []
+    idle_hours: float = 0
     achievements: str = ""
 
 
@@ -215,13 +237,18 @@ async def submit_timesheet(req: TimesheetReq, user=Depends(get_current_user)):
         raise HTTPException(400, "Cannot fill timesheet for a future date")
     if req.status not in ("present", "absent", "leave"):
         raise HTTPException(400, "Invalid status")
+    tasks = [t.model_dump() for t in req.tasks if t.hours > 0 or t.note.strip()]
+    total_hours = round(sum(t["hours"] for t in tasks), 2)
+    if req.status == "present" and total_hours + req.idle_hours > 24:
+        raise HTTPException(400, "Total hours (incl. idle) cannot exceed 24 in a day")
     existing = await db.timesheets.find_one({"user_id": ObjectId(user["id"]), "date": req.date})
     if existing and existing.get("approval_status") == "approved":
         raise HTTPException(400, "This day is already approved and locked")
     approver = user.get("reports_to")
     doc = {
         "user_id": ObjectId(user["id"]), "user_name": user["name"], "date": req.date,
-        "status": req.status, "hours": req.hours, "achievements": req.achievements,
+        "status": req.status, "tasks": tasks, "idle_hours": req.idle_hours,
+        "hours": total_hours, "total_hours": total_hours, "achievements": req.achievements,
         "approval_status": "pending" if approver else "approved",
         "approver_id": ObjectId(approver) if approver else None,
         "comments": "", "created_at": now_iso(), "reviewed_at": None,
@@ -651,17 +678,23 @@ SEED_CONTENT = {
     },
     "valuation": {
         "title": "Valuation & Market Opportunity",
-        "body": "Mukman Group is currently targeting a valuation of ₹1.5 crore, reflecting our deployed fleet, signed school contracts and recurring revenue base.\n\nThe market we are going after is large and unserved: India has over 25 crore school-going students and more than 10 crore daily office commuters, the vast majority of whom travel on fixed, recurring routes. Recurring-ride mobility in India is an estimated $10B+ annual opportunity with no organised category leader today.\n\nAs fleet deployment, school tie-ups and office-routes scale, we expect our valuation to compound quarter on quarter.",
+        "body": "Mukman Group is currently targeting a valuation of ₹25 crore, reflecting our deployed fleet of 17 vehicles, signed school contracts and a growing recurring revenue base.\n\nJust our home market tells the story: the addressable market for school-student commute in Delhi alone is ₹12,000 crore. Layer on office commuters travelling fixed routes every single day, and the national recurring-rides opportunity runs into tens of thousands of crores — with no organised category leader today.\n\nAs fleet deployment, school tie-ups and office routes scale, we expect this valuation to compound quarter on quarter.",
         "stats": [
-            {"label": "Target Valuation", "value": "₹1.5 Cr", "sub": "current round"},
-            {"label": "Market Size", "value": "$10B+", "sub": "India recurring rides"},
-            {"label": "School Students", "value": "25 Cr+", "sub": "addressable commuters"},
-            {"label": "Office Commuters", "value": "10 Cr+", "sub": "daily fixed-route riders"},
+            {"label": "Target Valuation", "value": "₹25 Cr", "sub": "current target"},
+            {"label": "Delhi School Market", "value": "₹12,000 Cr", "sub": "addressable, Delhi only"},
+            {"label": "Vehicles Deployed", "value": "17", "sub": "and scaling"},
+            {"label": "Recurring Revenue", "value": "₹4L/mo", "sub": "from school commute"},
         ],
     },
     "benefits": {
-        "title": "Employee Benefits",
-        "body": "Every Mukman employee is covered with ₹2 lakh of medical insurance from day one.\n\nThis covers hospitalisation, day-care procedures and emergency treatment for the employee, because we believe nobody should worry about medical bills while building the future of mobility.\n\nIn addition, eligible team members participate in the Mukman ESOP pool — real ownership in the group you are building. Performance, consistency and discipline (including timely timesheets and reviews) directly protect and grow that ownership.",
+        "title": "Employee Benefits at MukMan",
+        "body": "At MukMan, we take care of the people who take care of mobility.\n\nMedical Insurance: Every employee is covered with ₹2 lakh of medical insurance from day one — hospitalisation, day-care procedures and emergency treatment — so nobody worries about medical bills while building the future of mobility.\n\nWeekly Refreshment Activities: Every week we step away from the desk together — team activities, games and outings to recharge and bond as one MukMan family.\n\nFounder Counselling Sessions: Every employee gets direct, open-door counselling sessions with the Founder & CEO — career guidance, personal growth, or anything on your mind.\n\nESOP Ownership: Eligible team members hold real ownership in the group through the MukMan ESOP pool. Performance, consistency and discipline directly protect and grow that ownership.\n\nRecognition: Consistent performers are recognised in periodic reviews and all-hands — great work never goes unnoticed at MukMan.",
+        "stats": [
+            {"label": "Medical Insurance", "value": "₹2 Lakh", "sub": "from day one"},
+            {"label": "Refreshment Activities", "value": "Weekly", "sub": "team activities & outings"},
+            {"label": "Founder Counselling", "value": "Direct", "sub": "open-door sessions"},
+            {"label": "ESOP Pool", "value": "Ownership", "sub": "for eligible members"},
+        ],
     },
 }
 
@@ -673,12 +706,19 @@ SEED_PENALTIES = [
 ]
 
 SEED_EMPLOYEES = [
-    {"name": "Abhimanyu", "email": "abhimanyu@mukman.in", "phone": "9000000002", "title": "Senior Manager – Operations", "department": "Operations", "manager": "admin", "esop": True},
-    {"name": "Himanshu", "email": "himanshu@mukman.in", "phone": "9000000003", "title": "Fleet Maintenance Lead", "department": "Fleet Maintenance", "manager": "abhimanyu@mukman.in", "esop": False},
-    {"name": "Dipanshu", "email": "dipanshu@mukman.in", "phone": "9000000004", "title": "Driver Tracking & Onboarding Lead", "department": "Driver Operations", "manager": "abhimanyu@mukman.in", "esop": False},
-    {"name": "Micky", "email": "micky@mukman.in", "phone": "9000000005", "title": "Cash Collection Associate", "department": "Collections", "manager": "abhimanyu@mukman.in", "esop": False},
-    {"name": "Charvi", "email": "charvi@mukman.in", "phone": "9000000006", "title": "Parent Communication & Marketing", "department": "Marketing", "manager": "admin", "esop": False},
-    {"name": "Sanjay", "email": "sanjay@mukman.in", "phone": "9000000007", "title": "Technology Lead", "department": "Tech", "manager": "admin", "esop": True},
+    {"name": "Abhimanyu", "email": "abhimanyu@mukman.in", "phone": "9000000002", "title": "Operations & Technology", "department": "Operations", "manager": "admin", "esop": True},
+    {"name": "Himanshu", "email": "himanshu@mukman.in", "phone": "9000000003", "title": "Fleet Maintenance", "department": "Fleet Maintenance", "manager": "abhimanyu@mukman.in", "esop": False},
+    {"name": "Dipanshu", "email": "dipanshu@mukman.in", "phone": "9000000004", "title": "Driver Management", "department": "Driver Operations", "manager": "abhimanyu@mukman.in", "esop": False},
+    {"name": "Miki", "email": "micky@mukman.in", "phone": "9000000005", "title": "Collections", "department": "Collections", "manager": "abhimanyu@mukman.in", "esop": False},
+    {"name": "Charvi", "email": "charvi@mukman.in", "phone": "9000000006", "title": "Marketing & Parents", "department": "Marketing", "manager": "admin", "esop": False},
+    {"name": "Sanjay", "email": "sanjay@mukman.in", "phone": "9000000007", "title": "Technology", "department": "Tech", "manager": "admin", "esop": True},
+    {"name": "Vishnu", "email": "vishnu@mukman.in", "phone": "9000000009", "title": "Technology", "department": "Tech", "manager": "admin", "esop": False},
+    {"name": "Ashish", "email": "ashish@mukman.in", "phone": "9000000008", "title": "Attendance, Charging & HSV Global", "department": "Operations Support", "manager": "himanshu@mukman.in", "esop": False, "also": ["dipanshu@mukman.in", "abhimanyu@mukman.in"]},
+]
+
+ORG_VIRTUAL = [
+    {"key": "driver_hiring_open", "name": "Driver Hiring", "title": "Position open", "kind": "open", "parent_email": "abhimanyu@mukman.in"},
+    {"key": "pankaj_finance", "name": "Pankaj", "title": "Finance & Accounts", "kind": "hat", "parent_email": "founder"},
 ]
 
 
@@ -691,7 +731,7 @@ async def seed():
     admin_password = os.environ.get("ADMIN_PASSWORD", "Mukman@2026")
     admin = await db.users.find_one({"email": admin_email})
     if not admin:
-        doc = {"name": "Mukman Admin", "email": admin_email, "phone": "9000000001",
+        doc = {"name": "Pankaj Talan", "email": admin_email, "phone": "9000000001",
                "password_hash": hash_password(admin_password), "title": "Founder & CEO",
                "department": "Leadership", "reports_to": None, "role": "admin",
                "esop_applicable": True, "active": True, "created_at": now_iso()}
@@ -699,22 +739,33 @@ async def seed():
         admin = await db.users.find_one({"_id": res.inserted_id})
     elif not verify_password(admin_password, admin["password_hash"]):
         await db.users.update_one({"email": admin_email}, {"$set": {"password_hash": hash_password(admin_password)}})
-        admin = await db.users.find_one({"email": admin_email})
+    await db.users.update_one({"email": admin_email}, {"$set": {"name": "Pankaj Talan", "title": "Founder & CEO"}})
+    admin = await db.users.find_one({"email": admin_email})
 
     for e in SEED_EMPLOYEES:
-        if await db.users.find_one({"email": e["email"]}):
-            continue
-        if e["manager"] == "admin":
-            mgr_id = admin["_id"]
-        else:
-            mgr = await db.users.find_one({"email": e["manager"]})
-            mgr_id = mgr["_id"] if mgr else admin["_id"]
-        await db.users.insert_one({
-            "name": e["name"], "email": e["email"], "phone": e["phone"],
-            "password_hash": hash_password("Mukman@123"), "title": e["title"],
-            "department": e["department"], "reports_to": mgr_id, "role": "employee",
-            "esop_applicable": e["esop"], "active": True, "created_at": now_iso(),
-        })
+        if not await db.users.find_one({"email": e["email"]}):
+            if e["manager"] == "admin":
+                mgr_id = admin["_id"]
+            else:
+                mgr = await db.users.find_one({"email": e["manager"]})
+                mgr_id = mgr["_id"] if mgr else admin["_id"]
+            await db.users.insert_one({
+                "name": e["name"], "email": e["email"], "phone": e["phone"],
+                "password_hash": hash_password("Mukman@123"), "title": e["title"],
+                "department": e["department"], "reports_to": mgr_id, "role": "employee",
+                "esop_applicable": e["esop"], "active": True, "created_at": now_iso(),
+            })
+
+    for e in SEED_EMPLOYEES:
+        upd = {"name": e["name"], "title": e["title"], "department": e["department"]}
+        if e.get("also"):
+            ids = []
+            for em in e["also"]:
+                m = await db.users.find_one({"email": em})
+                if m:
+                    ids.append(m["_id"])
+            upd["also_reports_to"] = ids
+        await db.users.update_one({"email": e["email"]}, {"$set": upd})
 
     for key, val in SEED_CONTENT.items():
         if not await db.content.find_one({"key": key}):
@@ -723,6 +774,10 @@ async def seed():
     for p in SEED_PENALTIES:
         if not await db.penalty_rules.find_one({"key": p["key"]}):
             await db.penalty_rules.insert_one(p)
+
+    for v in ORG_VIRTUAL:
+        if not await db.org_nodes.find_one({"key": v["key"]}):
+            await db.org_nodes.insert_one(v)
 
     logger.info("Seed complete")
 

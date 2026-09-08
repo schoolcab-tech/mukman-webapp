@@ -39,6 +39,14 @@ Mukman Technologies is a holding group (SchoolCab — school commute, Cabzee —
 - Crons: daily timesheet reminder + weekly review nudge (verified working, idempotent, 401 without secret)
 - Testing: 26/26 backend pytest pass; full frontend E2E pass (1 fixed ObjectId serialization bug in review chains)
 
+## Iteration 2 (2026-09-08)
+- Valuation updated: target ₹25 Cr, Delhi school-student addressable market ₹12,000 Cr (stats + body)
+- Benefits rewritten "at MukMan": ₹2L medical insurance, weekly refreshment activities, founder counselling sessions, ESOP, recognition (removed test content)
+- Org chart rebuilt to match actual structure: Pankaj Talan (Founder & CEO) top → Abhimanyu middle → single peer line (Charvi, Driver Hiring [open position, virtual node], Himanshu, Dipanshu, Miki, Sanjay, Vishnu, Pankaj [Finance & Accounts hat]) with extended founder lines; Ashish dual-reporting under Himanshu & Dipanshu (dashed shared-report connectors); virtual nodes stored in `org_nodes` collection
+- Team updates: Micky→Miki, titles synced to chart, added Vishnu (Technology) and Ashish (Attendance, Charging & HSV Global); `also_reports_to` field for shared reporting
+- Timesheet redesigned: task-wise rows (Core Activity / Ad-hoc Activity assigned by team / Other Activities dropdowns) each with hours + note, idle hours row, auto-calculated total utilisation bar; approver sees full task breakdown table
+- Fixed ObjectId serialization for list fields (`also_reports_to`)
+
 ## MOCKED Integrations
 - **WhatsApp notifications are MOCKED**: stored as in-app notifications with channel='whatsapp_mock'. Real Twilio WhatsApp dispatch is the upgrade path.
 

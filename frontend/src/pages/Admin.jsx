@@ -138,7 +138,7 @@ function EmployeeManager() {
 
   const load = () => {
     api.get("/admin/employees").then((r) => setEmployees(r.data)).catch(() => {});
-    api.get("/org-chart").then((r) => setDirectory(r.data)).catch(() => {});
+    api.get("/org-chart").then((r) => setDirectory(r.data.people || [])).catch(() => {});
   };
   useEffect(() => { load(); }, []);
 
