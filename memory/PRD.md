@@ -53,6 +53,9 @@ Mukman Technologies is a holding group (SchoolCab — school commute, Cabzee —
 - Timesheet Excel export: GET /api/timesheets/export?period=week|month|ytd|custom(&start&end) — xlsx with Timesheets detail + per-employee Summary sheets; scope = all direct+indirect reportees (CEO sees everyone); 403 for employees without reportees; UI card with period picker + custom dates on Timesheet page
 - Idle hours now require an idle reason (backend 400 + UI validation); reason shown in approver breakdown and Excel export
 
+## Iteration 4 (2026-09-18)
+- AI model selector in Admin → Content & AI: "Enhance with AI" now supports ChatGPT (OpenAI gpt-5.4, gpt-5.4-mini) and Claude (Anthropic claude-sonnet-5, claude-sonnet-4-6), selectable per enhancement via `model` field on POST /api/admin/ai-enhance (default gpt-5.4; 400 on unsupported model)
+
 ## MOCKED Integrations
 - **WhatsApp notifications are MOCKED**: stored as in-app notifications with channel='whatsapp_mock'. Real Twilio WhatsApp dispatch is the upgrade path.
 

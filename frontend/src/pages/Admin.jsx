@@ -23,6 +23,13 @@ const CONTENT_SECTIONS = [
 
 const EMPTY_EMP = { name: "", email: "", phone: "", password: "", title: "", department: "", reports_to: "", role: "employee", esop_applicable: false, active: true };
 
+const AI_MODELS = [
+  { id: "gpt-5.4", label: "ChatGPT · GPT-5.4" },
+  { id: "gpt-5.4-mini", label: "ChatGPT · GPT-5.4 Mini" },
+  { id: "claude-sonnet-5", label: "Claude · Sonnet 5" },
+  { id: "claude-sonnet-4-6", label: "Claude · Sonnet 4.6" },
+];
+
 function ContentEditor() {
   const [content, setContent] = useState({});
   const [section, setSection] = useState("vision");
@@ -30,6 +37,7 @@ function ContentEditor() {
   const [body, setBody] = useState("");
   const [statsJson, setStatsJson] = useState("");
   const [tone, setTone] = useState("corporate");
+  const [model, setModel] = useState("gpt-5.4");
   const [enhancing, setEnhancing] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -47,9 +55,9 @@ function ContentEditor() {
     if (!body.trim()) return toast.error("Write a rough draft first, then enhance it");
     setEnhancing(true);
     try {
-      const { data } = await api.post("/admin/ai-enhance", { text: body, section, tone });
+      const { data } = await api.post("/admin/ai-enhance", { text: body, section, tone, model });
       setBody(data.enhanced);
-      toast.success("AI enhancement applied — review and save");
+      toast.success(`Enhanced with ${AI_MODELS.find((m) => m.id === data.model)?.label || data.model} — review and save`);
     } catch (e) {
       toast.error(errText(e.response?.data?.detail));
     } finally {
@@ -76,13 +84,22 @@ function ContentEditor() {
 
   return (
     <div className="space-y-5 max-w-3xl">
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid sm:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label>Portal section</Label>
           <Select value={section} onValueChange={setSection}>
             <SelectTrigger data-testid="admin-content-section-select"><SelectValue /></SelectTrigger>
             <SelectContent>
               {CONTENT_SECTIONS.map((s) => <SelectItem key={s.key} value={s.key}>{s.label}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>AI model</Label>
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger data-testid="admin-ai-model-select"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {AI_MODELS.map((m) => <SelectItem key={m.id} value={m.id} data-testid={`admin-ai-model-option-${m.id}`}>{m.label}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

@@ -180,6 +180,7 @@ class EnhanceReq(BaseModel):
     text: str
     section: str = "general"
     tone: str = "corporate"
+    model: str = "gpt-5.4"
 
 
 @api_router.post("/admin/ai-enhance")
@@ -195,14 +196,23 @@ async def ai_enhance(req: EnhanceReq, admin=Depends(require_admin)):
         "If the section is 'valuation', additionally sense-check that the market-size framing is coherent and clearly explain "
         "the valuation figures chosen. Use short paragraphs. Return ONLY the enhanced text, no preamble."
     )
+    MODEL_PROVIDERS = {
+        "gpt-5.4": "openai",
+        "gpt-5.4-mini": "openai",
+        "claude-sonnet-5": "anthropic",
+        "claude-sonnet-4-6": "anthropic",
+    }
+    provider = MODEL_PROVIDERS.get(req.model)
+    if not provider:
+        raise HTTPException(400, f"Unsupported AI model: {req.model}")
     chat = LlmChat(
         api_key=os.environ["EMERGENT_LLM_KEY"],
         session_id=f"enhance-{admin['id']}-{int(now().timestamp())}",
         system_message=system,
-    ).with_model("openai", "gpt-5.4")
+    ).with_model(provider, req.model)
     msg = UserMessage(text=f"Section: {req.section}\nTone: {req.tone}\n\nDraft text:\n{req.text}")
     enhanced = await chat.send_message(msg)
-    return {"enhanced": str(enhanced)}
+    return {"enhanced": str(enhanced), "model": req.model}
 
 
 # ---------------- Directory / Org chart ----------------
