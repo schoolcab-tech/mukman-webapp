@@ -56,6 +56,12 @@ Mukman Technologies is a holding group (SchoolCab — school commute, Cabzee —
 ## Iteration 4 (2026-09-18)
 - AI model selector in Admin → Content & AI: "Enhance with AI" now supports ChatGPT (OpenAI gpt-5.4, gpt-5.4-mini) and Claude (Anthropic claude-sonnet-5, claude-sonnet-4-6), selectable per enhancement via `model` field on POST /api/admin/ai-enhance (default gpt-5.4; 400 on unsupported model)
 
+## Iteration 5 (2026-09-18)
+- Global search (Ctrl+K or header search box): searches processes (timesheet, reviews, benefits, valuation, achievements, org chart, notifications, admin) → navigates; employees → detail view with full reporting chain up to founder + direct reportees
+- Employee hover cards (org chart + search results): mini reporting chart (manager/ reportees) + "Message on Slack" button
+- Slack DM deep-linking via `https://slack.com/app_redirect?channel=<member_id>&team=<SLACK_TEAM_ID>` (opens Slack app or web); per-employee `slack_id` editable in Admin → Employees; `SLACK_TEAM_ID` in backend/.env (empty — fill with workspace team ID from Slack workspace settings)
+- NOTE: Slack member IDs are NOT yet set for employees — admin must copy each member ID from Slack profile → More → Copy member ID and save it in the employee record
+
 ## MOCKED Integrations
 - **WhatsApp notifications are MOCKED**: stored as in-app notifications with channel='whatsapp_mock'. Real Twilio WhatsApp dispatch is the upgrade path.
 

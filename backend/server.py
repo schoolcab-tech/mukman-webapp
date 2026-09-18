@@ -224,7 +224,7 @@ async def org_chart(user=Depends(get_current_user)):
         {"id": str(u["_id"]), "name": u["name"], "title": u.get("title", ""), "department": u.get("department", ""),
          "role": u["role"], "reports_to": str(u["reports_to"]) if u.get("reports_to") else None,
          "also_reports_to": [str(x) for x in u.get("also_reports_to", [])],
-         "esop_applicable": u.get("esop_applicable", False)}
+         "esop_applicable": u.get("esop_applicable", False), "slack_id": u.get("slack_id", "")}
         for u in users
     ]
     founder = next((u for u in users if u["role"] == "admin" and not u.get("reports_to")), None)
@@ -238,7 +238,7 @@ async def org_chart(user=Depends(get_current_user)):
             pid = str(m["_id"]) if m else None
         virtual.append({"id": v["key"], "name": v["name"], "title": v.get("title", ""),
                         "kind": v.get("kind", "open"), "reports_to": pid, "virtual": True})
-    return {"people": people, "virtual": virtual}
+    return {"people": people, "virtual": virtual, "slack_team_id": os.environ.get("SLACK_TEAM_ID", "")}
 
 
 # ---------------- Timesheets ----------------
@@ -637,6 +637,7 @@ class EmployeeReq(BaseModel):
     role: str = "employee"
     esop_applicable: bool = False
     active: bool = True
+    slack_id: str = ""
 
 
 @api_router.get("/admin/employees")
@@ -656,7 +657,8 @@ async def create_employee(req: EmployeeReq, admin=Depends(require_admin)):
         "title": req.title, "department": req.department,
         "reports_to": ObjectId(req.reports_to) if req.reports_to else None,
         "role": req.role if req.role in ("admin", "employee") else "employee",
-        "esop_applicable": req.esop_applicable, "active": req.active, "must_change_password": True, "created_at": now_iso(),
+        "esop_applicable": req.esop_applicable, "active": req.active, "must_change_password": True,
+        "slack_id": req.slack_id, "created_at": now_iso(),
     }
     res = await db.users.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -673,7 +675,7 @@ async def update_employee(eid: str, req: EmployeeReq, admin=Depends(require_admi
         "title": req.title, "department": req.department,
         "reports_to": ObjectId(req.reports_to) if req.reports_to else None,
         "role": req.role if req.role in ("admin", "employee") else "employee",
-        "esop_applicable": req.esop_applicable, "active": req.active,
+        "esop_applicable": req.esop_applicable, "active": req.active, "slack_id": req.slack_id,
     }
     if req.password:
         update["password_hash"] = hash_password(req.password)

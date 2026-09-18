@@ -4,9 +4,10 @@ import { useAuth } from "@/context/AuthContext";
 import api from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import GlobalSearch from "@/components/GlobalSearch";
 import {
   LayoutGrid, TrendingUp, Award, Sparkles, Calendar, FileCheck,
-  MessageSquareText, Network, BellRing, ShieldAlert, LogOut, Menu, X, Bell,
+  MessageSquareText, Network, BellRing, ShieldAlert, LogOut, Menu, X, Bell, Search,
 } from "lucide-react";
 
 const SECTIONS = [
@@ -80,6 +81,18 @@ export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [unread, setUnread] = useState(0);
   const [popup, setPopup] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const h = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
 
   useEffect(() => {
     api.get("/notifications").then((r) => {
@@ -130,6 +143,15 @@ export default function Layout() {
             <div className="text-xs text-slate-500 truncate">{user.title || user.department || "Team Member"}</div>
           </div>
           <button
+            data-testid="header-search-button"
+            onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-100 hover:text-slate-800 text-sm transition-colors"
+          >
+            <Search className="h-4 w-4" />
+            <span className="hidden lg:inline">Search people & processes…</span>
+            <kbd className="hidden lg:inline text-[10px] bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 font-mono2">Ctrl K</kbd>
+          </button>
+          <button
             data-testid="header-notifications-button"
             onClick={() => navigate("/notifications")}
             className="relative p-2 rounded-full hover:bg-slate-100 text-slate-600 transition-colors"
@@ -155,6 +177,8 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
 
       <Dialog open={!!popup} onOpenChange={(o) => { if (!o) acknowledgePopup(); }}>
         <DialogContent data-testid="broadcast-popup">

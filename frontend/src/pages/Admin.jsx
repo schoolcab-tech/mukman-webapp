@@ -21,7 +21,7 @@ const CONTENT_SECTIONS = [
   { key: "benefits", label: "Employee Benefits" },
 ];
 
-const EMPTY_EMP = { name: "", email: "", phone: "", password: "", title: "", department: "", reports_to: "", role: "employee", esop_applicable: false, active: true };
+const EMPTY_EMP = { name: "", email: "", phone: "", password: "", title: "", department: "", reports_to: "", role: "employee", esop_applicable: false, active: true, slack_id: "" };
 
 const AI_MODELS = [
   { id: "gpt-5.4", label: "ChatGPT · GPT-5.4" },
@@ -163,7 +163,7 @@ function EmployeeManager() {
   const openEdit = (e) => {
     setEditing(e);
     setForm({ name: e.name, email: e.email, phone: e.phone || "", password: "", title: e.title || "", department: e.department || "",
-      reports_to: e.reports_to || "", role: e.role, esop_applicable: !!e.esop_applicable, active: !!e.active });
+      reports_to: e.reports_to || "", role: e.role, esop_applicable: !!e.esop_applicable, active: !!e.active, slack_id: e.slack_id || "" });
     setOpen(true);
   };
 
@@ -251,6 +251,7 @@ function EmployeeManager() {
             <div className="space-y-2"><Label>Name</Label><Input data-testid="employee-name-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div className="space-y-2"><Label>Email</Label><Input data-testid="employee-email-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-2"><Label>Phone (WhatsApp)</Label><Input data-testid="employee-phone-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+            <div className="space-y-2"><Label>Slack member ID (e.g. U012ABC3DEF)</Label><Input data-testid="employee-slack-input" value={form.slack_id} onChange={(e) => setForm({ ...form, slack_id: e.target.value })} placeholder="From their Slack profile → More → Copy member ID" /></div>
             <div className="space-y-2"><Label>{editing ? "Reset password (forces change on next login)" : "Password (optional)"}</Label><Input data-testid="employee-password-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
             <div className="space-y-2"><Label>Title</Label><Input data-testid="employee-title-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div className="space-y-2"><Label>Department</Label><Input data-testid="employee-department-input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>

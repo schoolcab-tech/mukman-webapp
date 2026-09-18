@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "@/lib/api";
+import EmployeeHover from "@/components/EmployeeHover";
 
 const CW = 176;
 const GAP = 28;
 const PITCH = CW + GAP;
 
-function PersonCard({ node, virtual, testidPrefix = "org-node" }) {
+function PersonCard({ node, virtual, people, teamId }) {
   const isOpen = virtual && node.kind === "open";
   const isHat = virtual && node.kind === "hat";
-  return (
+  const card = (
     <div
-      data-testid={`${testidPrefix}-${node.id}`}
+      data-testid={`org-node-${node.id}`}
       className={`w-44 rounded-2xl px-4 py-4 text-center shadow-sm transition-all hover:shadow-md ${
         isOpen
           ? "bg-amber-50 border border-dashed border-amber-400"
@@ -38,6 +39,10 @@ function PersonCard({ node, virtual, testidPrefix = "org-node" }) {
       )}
     </div>
   );
+  if (!virtual && people) {
+    return <EmployeeHover employee={node} people={people} teamId={teamId}>{card}</EmployeeHover>;
+  }
+  return card;
 }
 
 export default function OrgChart() {
@@ -103,10 +108,12 @@ export default function OrgChart() {
         <div className="mx-auto" style={{ width }}>
           {/* Founder */}
           <div className="flex justify-center">
-            <div className="rounded-2xl border border-slate-300 bg-slate-50 px-6 py-4 text-center shadow-sm" data-testid={`org-node-${founder.id}`}>
-              <div className="font-display font-bold text-slate-900 text-lg leading-tight">{founder.name}</div>
-              <div className="text-xs text-slate-500 mt-0.5">{founder.title}</div>
-            </div>
+            <EmployeeHover employee={founder} people={data.people} teamId={data.slack_team_id}>
+              <div className="rounded-2xl border border-slate-300 bg-slate-50 px-6 py-4 text-center shadow-sm cursor-pointer" data-testid={`org-node-${founder.id}`}>
+                <div className="font-display font-bold text-slate-900 text-lg leading-tight">{founder.name}</div>
+                <div className="text-xs text-slate-500 mt-0.5">{founder.title}</div>
+              </div>
+            </EmployeeHover>
           </div>
 
           {/* Connector zone: founder bus + middle manager + middle bus */}
@@ -114,10 +121,12 @@ export default function OrgChart() {
             <div className="h-10" />
             {middle && (
               <div className="flex justify-center relative z-10">
-                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-8 py-4 text-center shadow-sm" data-testid={`org-node-${middle.id}`}>
-                  <div className="font-display font-bold text-slate-900 text-base leading-tight">{middle.name}</div>
-                  <div className="text-xs text-slate-500 mt-0.5">{middle.title}</div>
-                </div>
+                <EmployeeHover employee={middle} people={data.people} teamId={data.slack_team_id}>
+                  <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-8 py-4 text-center shadow-sm cursor-pointer" data-testid={`org-node-${middle.id}`}>
+                    <div className="font-display font-bold text-slate-900 text-base leading-tight">{middle.name}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{middle.title}</div>
+                  </div>
+                </EmployeeHover>
               </div>
             )}
             <div className="h-10" />
@@ -153,7 +162,7 @@ export default function OrgChart() {
             {cols.map((c) => (
               <div key={c.node.id} className="flex flex-col items-center">
                 <div className={`w-px h-4 ${c.from === "founder" ? "bg-slate-400" : "bg-slate-300"}`} />
-                <PersonCard node={c.node} virtual={c.virtual} />
+                <PersonCard node={c.node} virtual={c.virtual} people={data.people} teamId={data.slack_team_id} />
               </div>
             ))}
           </div>
@@ -178,13 +187,15 @@ export default function OrgChart() {
                       )}
                       <div className="absolute left-1/2 top-5 h-3 border-l border-dashed border-slate-400" />
                     </div>
-                    <div className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-4 text-center shadow-sm" data-testid={`org-node-${node.id}`}>
-                      <div className="font-display font-bold text-slate-900 leading-tight">{node.name}</div>
-                      <div className="text-xs text-slate-500 mt-0.5 leading-snug">{node.title}</div>
-                      {names.length > 1 && (
-                        <div className="text-[10px] text-slate-400 mt-1.5">Reports to {names.join(" & ")}</div>
-                      )}
-                    </div>
+                    <EmployeeHover employee={node} people={data.people} teamId={data.slack_team_id}>
+                      <div className="rounded-2xl border border-slate-300 bg-slate-100 px-4 py-4 text-center shadow-sm cursor-pointer" data-testid={`org-node-${node.id}`}>
+                        <div className="font-display font-bold text-slate-900 leading-tight">{node.name}</div>
+                        <div className="text-xs text-slate-500 mt-0.5 leading-snug">{node.title}</div>
+                        {names.length > 1 && (
+                          <div className="text-[10px] text-slate-400 mt-1.5">Reports to {names.join(" & ")}</div>
+                        )}
+                      </div>
+                    </EmployeeHover>
                   </div>
                 );
               })}
