@@ -22,8 +22,8 @@ export default function Login() {
     setError("");
     setLoading(true);
     try {
-      await login(identifier, password);
-      navigate("/");
+      const data = await login(identifier, password);
+      navigate(data.must_change_password ? "/change-password" : "/");
     } catch (err) {
       setError(errText(err.response?.data?.detail));
     } finally {

@@ -11,6 +11,7 @@ import Reviews from "@/pages/Reviews";
 import Feedback from "@/pages/Feedback";
 import OrgChart from "@/pages/OrgChart";
 import Notifications from "@/pages/Notifications";
+import ChangePassword from "@/pages/ChangePassword";
 import Admin from "@/pages/Admin";
 
 const Loader = () => (
@@ -19,10 +20,12 @@ const Loader = () => (
   </div>
 );
 
-function Protected({ children, admin }) {
+function Protected({ children, admin, allowChange }) {
   const { user } = useAuth();
   if (user === null) return <Loader />;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.must_change_password && !allowChange) return <Navigate to="/change-password" replace />;
+  if (!user.must_change_password && allowChange) return <Navigate to="/" replace />;
   if (admin && user.role !== "admin") return <Navigate to="/" replace />;
   return children;
 }
@@ -34,6 +37,7 @@ function App() {
         <Toaster richColors position="top-right" />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/change-password" element={<Protected allowChange><ChangePassword /></Protected>} />
           <Route element={<Protected><Layout /></Protected>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/valuation" element={<ContentPage pageKey="valuation" eyebrow="Valuation & Market Cap" badgeClass="bg-teal-100 text-teal-900 border border-teal-300/40" testid="valuation-page" />} />

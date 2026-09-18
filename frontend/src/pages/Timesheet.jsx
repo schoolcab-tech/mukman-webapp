@@ -7,7 +7,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, AlertTriangle, Check, X as XIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight, AlertTriangle, Check, X as XIcon, Download } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 const STATUS_STYLE = {
   approved: "bg-emerald-100 text-emerald-800 border-emerald-300/50",
@@ -45,7 +46,10 @@ function TaskBreakdown({ entry }) {
           <tr className="border-t border-slate-100 bg-slate-50/60">
             <td className="px-3 py-2 font-medium text-slate-500">Idle hours</td>
             <td className="px-3 py-2 font-mono2 text-slate-700">{entry.idle_hours || 0}h</td>
-            <td className="px-3 py-2 font-semibold text-slate-900">Total utilised: {entry.total_hours ?? entry.hours ?? 0}h</td>
+            <td className="px-3 py-2">
+              {entry.idle_reason && <span className="text-slate-600 block">{entry.idle_reason}</span>}
+              <span className="font-semibold text-slate-900">Total utilised: {entry.total_hours ?? entry.hours ?? 0}h</span>
+            </td>
           </tr>
         </tbody>
       </table>
@@ -54,15 +58,21 @@ function TaskBreakdown({ entry }) {
 }
 
 export default function Timesheet() {
+  const { user } = useAuth();
   const today = new Date();
   const [month, setMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`);
   const [entries, setEntries] = useState({});
   const [approvals, setApprovals] = useState([]);
   const [rules, setRules] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ status: "present", tasks: emptyTasks(), idle_hours: 0, achievements: "" });
+  const [form, setForm] = useState({ status: "present", tasks: emptyTasks(), idle_hours: 0, idle_reason: "", achievements: "" });
   const [saving, setSaving] = useState(false);
   const [comments, setComments] = useState({});
+  const [hasReportees, setHasReportees] = useState(false);
+  const [expPeriod, setExpPeriod] = useState("month");
+  const [expStart, setExpStart] = useState("");
+  const [expEnd, setExpEnd] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   const load = () => {
     api.get(`/timesheets/my?month=${month}`).then((r) => {
@@ -72,6 +82,10 @@ export default function Timesheet() {
     }).catch(() => {});
     api.get("/timesheets/approvals").then((r) => setApprovals(r.data)).catch(() => {});
     api.get("/penalty-rules").then((r) => setRules(r.data.filter((x) => x.enabled))).catch(() => {});
+    api.get("/org-chart").then((r) => {
+      const people = r.data.people || [];
+      setHasReportees(user.role === "admin" || people.some((p) => p.reports_to === user.id));
+    }).catch(() => {});
   };
 
   useEffect(load, [month]);
@@ -97,9 +111,9 @@ export default function Timesheet() {
     if (e) {
       const tasks = emptyTasks();
       (e.tasks || []).forEach((t, i) => { if (i < tasks.length) tasks[i] = { category: t.category, hours: t.hours, note: t.note || "" }; });
-      setForm({ status: e.status, tasks, idle_hours: e.idle_hours || 0, achievements: e.achievements || "" });
+      setForm({ status: e.status, tasks, idle_hours: e.idle_hours || 0, idle_reason: e.idle_reason || "", achievements: e.achievements || "" });
     } else {
-      setForm({ status: "present", tasks: emptyTasks(), idle_hours: 0, achievements: "" });
+      setForm({ status: "present", tasks: emptyTasks(), idle_hours: 0, idle_reason: "", achievements: "" });
     }
     setSelected(date);
   };
@@ -113,6 +127,7 @@ export default function Timesheet() {
         date: selected, status: form.status,
         tasks: form.tasks.map((t) => ({ category: t.category, hours: Number(t.hours) || 0, note: t.note })),
         idle_hours: Number(form.idle_hours) || 0,
+        idle_reason: form.idle_reason,
         achievements: form.achievements,
       });
       toast.success(`Timesheet for ${selected} submitted for approval`);
@@ -132,6 +147,25 @@ export default function Timesheet() {
       load();
     } catch (e) {
       toast.error(errText(e.response?.data?.detail));
+    }
+  };
+
+  const downloadExport = async () => {
+    setExporting(true);
+    try {
+      const params = expPeriod === "custom" ? { period: "custom", start: expStart, end: expEnd } : { period: expPeriod };
+      const res = await api.get("/timesheets/export", { params, responseType: "blob" });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mukman-timesheets-${expPeriod}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Excel summary downloaded");
+    } catch (e) {
+      toast.error("Export failed — check the date range or try again");
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -210,6 +244,37 @@ export default function Timesheet() {
           <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 border border-red-400/60" /> Missing</span>
         </div>
       </div>
+
+      {hasReportees && (
+        <section className="bg-white rounded-2xl border border-slate-200 p-5" data-testid="timesheet-export-card">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-52">
+              <div className="font-semibold text-slate-900">Team timesheet summary (Excel)</div>
+              <p className="text-xs text-slate-500 mt-0.5">Consolidated download for everyone reporting to you — direct and indirect.</p>
+            </div>
+            <Select value={expPeriod} onValueChange={setExpPeriod}>
+              <SelectTrigger data-testid="timesheet-export-period-select" className="w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="week">This week</SelectItem>
+                <SelectItem value="month">This month</SelectItem>
+                <SelectItem value="ytd">Year to date</SelectItem>
+                <SelectItem value="custom">Custom range</SelectItem>
+              </SelectContent>
+            </Select>
+            {expPeriod === "custom" && (
+              <>
+                <Input type="date" data-testid="timesheet-export-start-input" value={expStart} onChange={(e) => setExpStart(e.target.value)} className="w-40" />
+                <Input type="date" data-testid="timesheet-export-end-input" value={expEnd} onChange={(e) => setExpEnd(e.target.value)} className="w-40" />
+              </>
+            )}
+            <Button data-testid="timesheet-export-download-button" onClick={downloadExport}
+              disabled={exporting || (expPeriod === "custom" && (!expStart || !expEnd))}
+              className="bg-slate-900 hover:bg-slate-800 text-white">
+              <Download className="h-4 w-4 mr-1.5" /> {exporting ? "Preparing…" : "Download Excel"}
+            </Button>
+          </div>
+        </section>
+      )}
 
       {approvals.length > 0 && (
         <section data-testid="timesheet-approvals-section">
@@ -297,7 +362,10 @@ export default function Timesheet() {
                       <div className="text-xs font-medium text-slate-500 px-1">Idle hours</div>
                       <Input type="number" min="0" max="24" step="0.5" data-testid="timesheet-idle-hours-input"
                         value={form.idle_hours} onChange={(e) => setForm({ ...form, idle_hours: e.target.value })} />
-                      <div />
+                      <Input placeholder={Number(form.idle_hours) > 0 ? "Reason for idle time (required — sick, travel, etc.)…" : "Reason for idle time…"}
+                        data-testid="timesheet-idle-reason-input"
+                        value={form.idle_reason} onChange={(e) => setForm({ ...form, idle_reason: e.target.value })}
+                        className="col-span-2 sm:col-span-1" />
                     </div>
                     <div className="flex items-center justify-between rounded-xl bg-slate-900 text-white px-4 py-3" data-testid="timesheet-total-hours">
                       <span className="text-xs font-semibold tracking-[0.12em] uppercase text-slate-400">Total time utilised</span>
@@ -323,7 +391,7 @@ export default function Timesheet() {
           )}
           <DialogFooter>
             {entries[selected]?.approval_status !== "approved" && (
-              <Button data-testid="timesheet-submit-button" onClick={submit} disabled={saving || (form.status === "present" && totalHours === 0)} className="bg-slate-900 hover:bg-slate-800 text-white">
+              <Button data-testid="timesheet-submit-button" onClick={submit} disabled={saving || (form.status === "present" && totalHours === 0) || (Number(form.idle_hours) > 0 && !form.idle_reason.trim())} className="bg-slate-900 hover:bg-slate-800 text-white">
                 {saving ? "Submitting…" : "Submit for approval"}
               </Button>
             )}

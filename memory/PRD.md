@@ -47,6 +47,12 @@ Mukman Technologies is a holding group (SchoolCab — school commute, Cabzee —
 - Timesheet redesigned: task-wise rows (Core Activity / Ad-hoc Activity assigned by team / Other Activities dropdowns) each with hours + note, idle hours row, auto-calculated total utilisation bar; approver sees full task breakdown table
 - Fixed ObjectId serialization for list fields (`also_reports_to`)
 
+## Iteration 3 (2026-09-18)
+- Credentials: all 7 employees now log in with their real phone numbers (7807903265 Abhimanyu, 9560320353 Himanshu, 9220836613 Dipanshu, 9311763047 Miki, 9354439610 Ashish, 9060438347 Sanjay, 9811577867 Charvi), initial password `Schoolcab@1`; Vishnu removed
+- Forced first-login password change: `must_change_password` flag → /change-password page (verified end-to-end); admin password resets also force a change on next login; master admin (CEO) can reset anyone's password from Admin → Employees; CEO account unchanged (mukman.technologies@gmail.com / Mukman@2026)
+- Timesheet Excel export: GET /api/timesheets/export?period=week|month|ytd|custom(&start&end) — xlsx with Timesheets detail + per-employee Summary sheets; scope = all direct+indirect reportees (CEO sees everyone); 403 for employees without reportees; UI card with period picker + custom dates on Timesheet page
+- Idle hours now require an idle reason (backend 400 + UI validation); reason shown in approver breakdown and Excel export
+
 ## MOCKED Integrations
 - **WhatsApp notifications are MOCKED**: stored as in-app notifications with channel='whatsapp_mock'. Real Twilio WhatsApp dispatch is the upgrade path.
 

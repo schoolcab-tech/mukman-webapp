@@ -11,6 +11,7 @@ import bcrypt
 import jwt
 from bson import ObjectId
 from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depends, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -135,6 +136,22 @@ async def me(user=Depends(get_current_user)):
     return user
 
 
+class ChangePwReq(BaseModel):
+    current_password: str
+    new_password: str
+
+
+@api_router.post("/auth/change-password")
+async def change_password(req: ChangePwReq, user=Depends(get_current_user)):
+    if len(req.new_password) < 6:
+        raise HTTPException(400, "New password must be at least 6 characters")
+    doc = await db.users.find_one({"_id": ObjectId(user["id"])})
+    if not doc or not verify_password(req.current_password, doc["password_hash"]):
+        raise HTTPException(400, "Current password is incorrect")
+    await db.users.update_one({"_id": doc["_id"]}, {"$set": {"password_hash": hash_password(req.new_password), "must_change_password": False}})
+    return {"ok": True}
+
+
 # ---------------- Content CMS ----------------
 
 @api_router.get("/content")
@@ -227,6 +244,7 @@ class TimesheetReq(BaseModel):
     status: str
     tasks: List[TaskEntry] = []
     idle_hours: float = 0
+    idle_reason: str = ""
     achievements: str = ""
 
 
@@ -241,13 +259,15 @@ async def submit_timesheet(req: TimesheetReq, user=Depends(get_current_user)):
     total_hours = round(sum(t["hours"] for t in tasks), 2)
     if req.status == "present" and total_hours + req.idle_hours > 24:
         raise HTTPException(400, "Total hours (incl. idle) cannot exceed 24 in a day")
+    if req.idle_hours > 0 and not req.idle_reason.strip():
+        raise HTTPException(400, "Please add a reason for idle hours")
     existing = await db.timesheets.find_one({"user_id": ObjectId(user["id"]), "date": req.date})
     if existing and existing.get("approval_status") == "approved":
         raise HTTPException(400, "This day is already approved and locked")
     approver = user.get("reports_to")
     doc = {
         "user_id": ObjectId(user["id"]), "user_name": user["name"], "date": req.date,
-        "status": req.status, "tasks": tasks, "idle_hours": req.idle_hours,
+        "status": req.status, "tasks": tasks, "idle_hours": req.idle_hours, "idle_reason": req.idle_reason,
         "hours": total_hours, "total_hours": total_hours, "achievements": req.achievements,
         "approval_status": "pending" if approver else "approved",
         "approver_id": ObjectId(approver) if approver else None,
@@ -309,6 +329,103 @@ async def approve_timesheet(tid: str, req: CommentReq, user=Depends(get_current_
 @api_router.post("/timesheets/{tid}/reject")
 async def reject_timesheet(tid: str, req: CommentReq, user=Depends(get_current_user)):
     return await _review_timesheet(tid, "rejected", req.comment, user)
+
+
+@api_router.get("/timesheets/export")
+async def export_timesheets(period: str = "month", start: Optional[str] = None, end: Optional[str] = None, user=Depends(get_current_user)):
+    today = now().astimezone(IST).date()
+    if period == "week":
+        s = (today - timedelta(days=today.weekday())).isoformat()
+        e = today.isoformat()
+    elif period == "month":
+        s = today.replace(day=1).isoformat()
+        e = today.isoformat()
+    elif period == "ytd":
+        s = today.replace(month=1, day=1).isoformat()
+        e = today.isoformat()
+    elif period == "custom" and start and end and start <= end:
+        s, e = start, end
+    else:
+        raise HTTPException(400, "Invalid period or date range")
+
+    users = await db.users.find({"active": True}).to_list(500)
+    children = {}
+    for u in users:
+        if u.get("reports_to"):
+            children.setdefault(str(u["reports_to"]), []).append(u)
+    scope = []
+    stack = list(children.get(user["id"], []))
+    while stack:
+        u = stack.pop()
+        scope.append(u)
+        stack.extend(children.get(str(u["_id"]), []))
+    if user["role"] == "admin":
+        have = {u["_id"] for u in scope}
+        for u in users:
+            if u["_id"] not in have and str(u["_id"]) != user["id"]:
+                scope.append(u)
+    if not scope:
+        raise HTTPException(403, "You have no reportees to export")
+
+    ids = [u["_id"] for u in scope]
+    entries = await db.timesheets.find({"user_id": {"$in": ids}, "date": {"$gte": s, "$lte": e}}).sort("date", 1).to_list(10000)
+
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Timesheets"
+    headers = ["Employee", "Date", "Status", "Core Activity (h)", "Ad-hoc Activity (h)", "Other Activities (h)",
+               "Idle (h)", "Idle Reason", "Total Utilised (h)", "Achievements / Notes", "Approval Status", "Manager Comment"]
+    head_font = Font(bold=True, color="FFFFFF")
+    head_fill = PatternFill("solid", fgColor="0F172A")
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = head_font
+        c.fill = head_fill
+
+    def cat_hours(tasks, prefix):
+        return round(sum(t.get("hours", 0) for t in (tasks or []) if str(t.get("category", "")).startswith(prefix)), 2)
+
+    for en in entries:
+        ws.append([
+            en.get("user_name", ""), en.get("date", ""), str(en.get("status", "")).title(),
+            cat_hours(en.get("tasks"), "Core"), cat_hours(en.get("tasks"), "Ad-hoc"), cat_hours(en.get("tasks"), "Other"),
+            en.get("idle_hours", 0), en.get("idle_reason", ""), en.get("total_hours", en.get("hours", 0)),
+            en.get("achievements", ""), str(en.get("approval_status", "")).title(), en.get("comments", ""),
+        ])
+    for i, w in enumerate([18, 12, 10, 16, 18, 18, 9, 28, 16, 36, 14, 24], 1):
+        ws.column_dimensions[chr(64 + i)].width = w
+
+    ws2 = wb.create_sheet("Summary")
+    ws2.append(["Employee", "Present Days", "Absent", "Leave", "Total Utilised (h)", "Idle (h)"])
+    for c in ws2[1]:
+        c.font = head_font
+        c.fill = head_fill
+    for u in scope:
+        mine = [en for en in entries if en.get("user_id") == u["_id"]]
+        ws2.append([
+            u["name"],
+            sum(1 for en in mine if en.get("status") == "present"),
+            sum(1 for en in mine if en.get("status") == "absent"),
+            sum(1 for en in mine if en.get("status") == "leave"),
+            round(sum(en.get("total_hours", en.get("hours", 0)) for en in mine), 2),
+            round(sum(en.get("idle_hours", 0) for en in mine), 2),
+        ])
+    for i, w in enumerate([18, 13, 9, 9, 18, 9], 1):
+        ws2.column_dimensions[chr(64 + i)].width = w
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = f"mukman-timesheets-{period}-{s}-to-{e}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 # ---------------- Periodic reviews ----------------
@@ -525,11 +642,11 @@ async def create_employee(req: EmployeeReq, admin=Depends(require_admin)):
         raise HTTPException(400, "Email already exists")
     doc = {
         "name": req.name, "email": email, "phone": req.phone,
-        "password_hash": hash_password(req.password or "Mukman@123"),
+        "password_hash": hash_password(req.password or "Schoolcab@1"),
         "title": req.title, "department": req.department,
         "reports_to": ObjectId(req.reports_to) if req.reports_to else None,
         "role": req.role if req.role in ("admin", "employee") else "employee",
-        "esop_applicable": req.esop_applicable, "active": req.active, "created_at": now_iso(),
+        "esop_applicable": req.esop_applicable, "active": req.active, "must_change_password": True, "created_at": now_iso(),
     }
     res = await db.users.insert_one(doc)
     doc["_id"] = res.inserted_id
@@ -550,6 +667,7 @@ async def update_employee(eid: str, req: EmployeeReq, admin=Depends(require_admi
     }
     if req.password:
         update["password_hash"] = hash_password(req.password)
+        update["must_change_password"] = True
     await db.users.update_one({"_id": emp["_id"]}, {"$set": update})
     return serialize(await db.users.find_one({"_id": emp["_id"]}))
 
@@ -706,14 +824,13 @@ SEED_PENALTIES = [
 ]
 
 SEED_EMPLOYEES = [
-    {"name": "Abhimanyu", "email": "abhimanyu@mukman.in", "phone": "9000000002", "title": "Operations & Technology", "department": "Operations", "manager": "admin", "esop": True},
-    {"name": "Himanshu", "email": "himanshu@mukman.in", "phone": "9000000003", "title": "Fleet Maintenance", "department": "Fleet Maintenance", "manager": "abhimanyu@mukman.in", "esop": False},
-    {"name": "Dipanshu", "email": "dipanshu@mukman.in", "phone": "9000000004", "title": "Driver Management", "department": "Driver Operations", "manager": "abhimanyu@mukman.in", "esop": False},
-    {"name": "Miki", "email": "micky@mukman.in", "phone": "9000000005", "title": "Collections", "department": "Collections", "manager": "abhimanyu@mukman.in", "esop": False},
-    {"name": "Charvi", "email": "charvi@mukman.in", "phone": "9000000006", "title": "Marketing & Parents", "department": "Marketing", "manager": "admin", "esop": False},
-    {"name": "Sanjay", "email": "sanjay@mukman.in", "phone": "9000000007", "title": "Technology", "department": "Tech", "manager": "admin", "esop": True},
-    {"name": "Vishnu", "email": "vishnu@mukman.in", "phone": "9000000009", "title": "Technology", "department": "Tech", "manager": "admin", "esop": False},
-    {"name": "Ashish", "email": "ashish@mukman.in", "phone": "9000000008", "title": "Attendance, Charging & HSV Global", "department": "Operations Support", "manager": "himanshu@mukman.in", "esop": False, "also": ["dipanshu@mukman.in", "abhimanyu@mukman.in"]},
+    {"name": "Abhimanyu", "email": "abhimanyu@mukman.in", "phone": "7807903265", "title": "Operations & Technology", "department": "Operations", "manager": "admin", "esop": True},
+    {"name": "Himanshu", "email": "himanshu@mukman.in", "phone": "9560320353", "title": "Fleet Maintenance", "department": "Fleet Maintenance", "manager": "abhimanyu@mukman.in", "esop": False},
+    {"name": "Dipanshu", "email": "dipanshu@mukman.in", "phone": "9220836613", "title": "Driver Management", "department": "Driver Operations", "manager": "abhimanyu@mukman.in", "esop": False},
+    {"name": "Miki", "email": "micky@mukman.in", "phone": "9311763047", "title": "Collections", "department": "Collections", "manager": "abhimanyu@mukman.in", "esop": False},
+    {"name": "Charvi", "email": "charvi@mukman.in", "phone": "9811577867", "title": "Marketing & Parents", "department": "Marketing", "manager": "admin", "esop": False},
+    {"name": "Sanjay", "email": "sanjay@mukman.in", "phone": "9060438347", "title": "Technology", "department": "Tech", "manager": "admin", "esop": True},
+    {"name": "Ashish", "email": "ashish@mukman.in", "phone": "9354439610", "title": "Attendance, Charging & HSV Global", "department": "Operations Support", "manager": "himanshu@mukman.in", "esop": False, "also": ["dipanshu@mukman.in", "abhimanyu@mukman.in"]},
 ]
 
 ORG_VIRTUAL = [
@@ -751,13 +868,13 @@ async def seed():
                 mgr_id = mgr["_id"] if mgr else admin["_id"]
             await db.users.insert_one({
                 "name": e["name"], "email": e["email"], "phone": e["phone"],
-                "password_hash": hash_password("Mukman@123"), "title": e["title"],
+                "password_hash": hash_password("Schoolcab@1"), "title": e["title"],
                 "department": e["department"], "reports_to": mgr_id, "role": "employee",
-                "esop_applicable": e["esop"], "active": True, "created_at": now_iso(),
+                "esop_applicable": e["esop"], "active": True, "must_change_password": True, "created_at": now_iso(),
             })
 
     for e in SEED_EMPLOYEES:
-        upd = {"name": e["name"], "title": e["title"], "department": e["department"]}
+        upd = {"name": e["name"], "title": e["title"], "department": e["department"], "phone": e["phone"]}
         if e.get("also"):
             ids = []
             for em in e["also"]:

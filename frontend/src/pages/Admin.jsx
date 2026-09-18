@@ -183,7 +183,7 @@ function EmployeeManager() {
   return (
     <div className="space-y-4" data-testid="admin-employees-section">
       <div className="flex justify-between items-center">
-        <p className="text-sm text-slate-500">{employees.length} people in the group. New employees default to password <span className="font-mono2">Mukman@123</span> unless set below.</p>
+        <p className="text-sm text-slate-500">{employees.length} people in the group. New employees default to password <span className="font-mono2">Schoolcab@1</span> and are asked to set their own password on first login. Setting a password here resets it and forces a change on their next login.</p>
         <Button data-testid="admin-add-employee-button" onClick={openAdd} className="bg-slate-900 hover:bg-slate-800 text-white">
           <Plus className="h-4 w-4 mr-1.5" /> Add Employee
         </Button>
@@ -234,7 +234,7 @@ function EmployeeManager() {
             <div className="space-y-2"><Label>Name</Label><Input data-testid="employee-name-input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div className="space-y-2"><Label>Email</Label><Input data-testid="employee-email-input" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div className="space-y-2"><Label>Phone (WhatsApp)</Label><Input data-testid="employee-phone-input" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
-            <div className="space-y-2"><Label>{editing ? "New password (optional)" : "Password (optional)"}</Label><Input data-testid="employee-password-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
+            <div className="space-y-2"><Label>{editing ? "Reset password (forces change on next login)" : "Password (optional)"}</Label><Input data-testid="employee-password-input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} /></div>
             <div className="space-y-2"><Label>Title</Label><Input data-testid="employee-title-input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
             <div className="space-y-2"><Label>Department</Label><Input data-testid="employee-department-input" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
             <div className="space-y-2">
