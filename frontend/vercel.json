@@ -1,0 +1,9 @@
+{
+  "installCommand": "npm ci --legacy-peer-deps",
+  "buildCommand": "CI=false npm run build",
+  "rewrites": [
+    { "source": "/api", "destination": "/api/index" },
+    { "source": "/api/(.*)", "destination": "/api/index?path=$1" },
+    { "source": "/((?!api(?:/|$)).*)", "destination": "/index.html" }
+  ]
+}

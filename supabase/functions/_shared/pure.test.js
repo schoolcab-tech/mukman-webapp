@@ -1,0 +1,127 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  apiPath,
+  accessCookie,
+  buildXlsx,
+  exportScope,
+  istDate,
+  monthBounds,
+  periodRange,
+  readCookie,
+  signJwt,
+  summaryRow,
+  timesheetDetailRow,
+  validateTimesheet,
+  verifyJwt,
+  weeklyLabel,
+} from "./pure.js";
+
+test("api path strips the Supabase function prefix", () => {
+  assert.equal(apiPath("/functions/v1/api/auth/login"), "/auth/login");
+  assert.equal(apiPath("/api/timesheets/my"), "/timesheets/my");
+  assert.equal(apiPath("/functions/v1/api"), "/");
+  assert.equal(apiPath("/functions/v1/api/"), "/");
+});
+
+test("cookie round trip header", () => {
+  const header = accessCookie("abc.def", 60);
+  assert.equal(readCookie(header, "access_token"), "abc.def");
+  assert.match(header, /HttpOnly/);
+  assert.match(header, /SameSite=None/);
+});
+
+test("IST date and ISO week match the previous Python rules", () => {
+  const utc = new Date("2026-10-31T18:30:00.000Z");
+  assert.equal(istDate(utc), "2026-11-01");
+  assert.equal(weeklyLabel("2026-10-31"), "2026-W44");
+  assert.deepEqual(periodRange("week", "2026-10-31"), { s: "2026-10-26", e: "2026-10-31" });
+  assert.deepEqual(periodRange("month", "2026-10-31"), { s: "2026-10-01", e: "2026-10-31" });
+  assert.deepEqual(monthBounds("2026-02"), { start: "2026-02-01", end: "2026-02-28" });
+  assert.equal(periodRange("custom", "2026-10-31", "2026-10-10", "2026-10-01"), null);
+});
+
+test("timesheet validation keeps the FastAPI messages", () => {
+  assert.equal(
+    validateTimesheet({ date: "2026-11-02", status: "present", tasks: [], idle_hours: 0, idle_reason: "", today: "2026-11-01" }),
+    "Cannot fill timesheet for a future date",
+  );
+  assert.equal(
+    validateTimesheet({
+      date: "2026-11-01",
+      status: "present",
+      tasks: [{ category: "Core Activity", hours: 20, note: "" }],
+      idle_hours: 5,
+      idle_reason: "travel",
+      today: "2026-11-01",
+    }),
+    "Total hours (incl. idle) cannot exceed 24 in a day",
+  );
+  const ok = validateTimesheet({
+    date: "2026-11-01",
+    status: "present",
+    tasks: [
+      { category: "Core Activity", hours: 6, note: "" },
+      { category: "Other Activities", hours: 0, note: "   " },
+    ],
+    idle_hours: 1,
+    idle_reason: "sick",
+    today: "2026-11-01",
+  });
+  assert.equal(ok.total, 6);
+  assert.equal(ok.kept.length, 1);
+});
+
+test("admin export includes every other active person", () => {
+  const users = [
+    { id: "a", name: "Admin", reports_to: null },
+    { id: "b", name: "Lead", reports_to: "a" },
+    { id: "c", name: "IC", reports_to: "b" },
+    { id: "d", name: "Peer", reports_to: "a" },
+  ];
+  assert.deepEqual(exportScope(users, "b", "employee").map((u) => u.id), ["c"]);
+  assert.deepEqual(exportScope(users, "a", "admin").map((u) => u.id).sort(), ["b", "c", "d"]);
+});
+
+test("excel rows and workbook contain both sheets", () => {
+  const row = timesheetDetailRow({
+    user_name: "Sanjay",
+    date: "2026-10-31",
+    status: "present",
+    tasks: [{ category: "Core Activity", hours: 4 }, { category: "Ad-hoc Activity assigned by team", hours: 1.5 }],
+    idle_hours: 0.5,
+    idle_reason: "",
+    total_hours: 5.5,
+    achievements: "Shipped",
+    approval_status: "pending",
+    comments: "",
+  });
+  assert.equal(row[3], 4);
+  assert.equal(row[4], 1.5);
+  assert.equal(row[2], "Present");
+  const summary = summaryRow({ id: "u1", name: "Sanjay" }, [
+    { user_id: "u1", status: "present", total_hours: 5.5, idle_hours: 0.5 },
+    { user_id: "u1", status: "leave", total_hours: 0, idle_hours: 0 },
+  ]);
+  assert.deepEqual(summary, ["Sanjay", 1, 0, 1, 5.5, 0.5]);
+  const bytes = buildXlsx([
+    { name: "Timesheets", headers: ["Employee"], rows: [row], widths: [18] },
+    { name: "Summary", headers: ["Employee"], rows: [summary], widths: [18] },
+  ]);
+  const text = new TextDecoder().decode(bytes);
+  assert.match(text, /Timesheets/);
+  assert.match(text, /Summary/);
+  assert.match(text, /FF0F172A/);
+  assert.match(text, /Sanjay/);
+  assert.equal(bytes[0], 0x50);
+  assert.equal(bytes[1], 0x4b);
+});
+
+test("jwt expires and rejects a bad signature", async () => {
+  const token = await signJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) + 60, type: "access" }, "secret");
+  const payload = await verifyJwt(token, "secret");
+  assert.equal(payload.sub, "user-1");
+  await assert.rejects(() => verifyJwt(token, "other"), /invalid/);
+  const expired = await signJwt({ sub: "user-1", exp: Math.floor(Date.now() / 1000) - 10, type: "access" }, "secret");
+  await assert.rejects(() => verifyJwt(expired, "secret"), /expired/);
+});
