@@ -530,14 +530,15 @@ async function reviewTimesheet(req: Request, supabase: ReturnType<typeof client>
   if (String(sheet.approver_id || "") !== user.id && user.role !== "admin") throw new HttpError(403, "Not the approver for this entry");
   if (sheet.approval_status !== "pending") throw new HttpError(400, "Already reviewed");
   const comment = String(body.comment || "");
+  const approvalStatus = action === "approve" ? "approved" : "rejected";
   const { error: updateError } = await supabase.from("timesheets").update({
-    approval_status: action,
+    approval_status: approvalStatus,
     comments: comment,
     reviewed_by: user.id,
     reviewed_at: new Date().toISOString(),
   }).eq("id", id);
   fail(updateError);
-  const verb = action === "approved" ? "approved" : "rejected";
+  const verb = approvalStatus;
   await notify(
     supabase,
     sheet.user_id,

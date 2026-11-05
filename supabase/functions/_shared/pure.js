@@ -98,13 +98,13 @@ export function round2(n) {
 
 export function validateTimesheet({ date, status, tasks, idle_hours, idle_reason, today }) {
   if (!date || date > today) return "Cannot fill timesheet for a future date";
-  if (!["present", "absent", "leave"].includes(status)) return "Invalid status";
+  if (!["present", "half_day", "absent", "leave"].includes(status)) return "Invalid status";
   const kept = (Array.isArray(tasks) ? tasks : []).filter(
     (t) => Number(t.hours) > 0 || String(t.note || "").trim(),
   );
   const total = round2(kept.reduce((s, t) => s + (Number(t.hours) || 0), 0));
   const idle = Number(idle_hours) || 0;
-  if (status === "present" && total + idle > 24) return "Total hours (incl. idle) cannot exceed 24 in a day";
+  if ((status === "present" || status === "half_day") && total + idle > 24) return "Total hours (incl. idle) cannot exceed 24 in a day";
   if (idle > 0 && !String(idle_reason || "").trim()) return "Please add a reason for idle hours";
   return { kept: kept.map((t) => ({ category: String(t.category || ""), hours: Number(t.hours) || 0, note: String(t.note || "") })), total, idle };
 }
@@ -146,6 +146,18 @@ function titleWord(value) {
   return v ? v.charAt(0).toUpperCase() + v.slice(1) : "";
 }
 
+export function statusLabel(value) {
+  if (value === "half_day") return "Half day";
+  return titleWord(value);
+}
+
+export function activityLines(tasks) {
+  return (tasks || [])
+    .filter((t) => Number(t.hours) > 0 || String(t.note || "").trim())
+    .map((t) => `${t.category || "Activity"}: ${Number(t.hours) || 0}h — ${String(t.note || "").trim()}`.replace(/ — $/, ""))
+    .join("\n");
+}
+
 export const TIMESHEET_HEADERS = [
   "Employee",
   "Date",
@@ -153,6 +165,7 @@ export const TIMESHEET_HEADERS = [
   "Core Activity (h)",
   "Ad-hoc Activity (h)",
   "Other Activities (h)",
+  "Activities",
   "Idle (h)",
   "Idle Reason",
   "Total Utilised (h)",
@@ -161,19 +174,20 @@ export const TIMESHEET_HEADERS = [
   "Manager Comment",
 ];
 
-export const SUMMARY_HEADERS = ["Employee", "Present Days", "Absent", "Leave", "Total Utilised (h)", "Idle (h)"];
+export const SUMMARY_HEADERS = ["Employee", "Present Days", "Half day", "Absent", "Leave", "Total Utilised (h)", "Idle (h)"];
 
-export const TIMESHEET_WIDTHS = [18, 12, 10, 16, 18, 18, 9, 28, 16, 36, 14, 24];
-export const SUMMARY_WIDTHS = [18, 13, 9, 9, 18, 9];
+export const TIMESHEET_WIDTHS = [18, 12, 12, 16, 18, 18, 42, 9, 28, 16, 36, 14, 24];
+export const SUMMARY_WIDTHS = [18, 13, 11, 9, 9, 18, 9];
 
 export function timesheetDetailRow(entry) {
   return [
     entry.user_name || "",
     entry.date || "",
-    titleWord(entry.status),
+    statusLabel(entry.status),
     catHours(entry.tasks, "Core"),
     catHours(entry.tasks, "Ad-hoc"),
     catHours(entry.tasks, "Other"),
+    activityLines(entry.tasks),
     Number(entry.idle_hours) || 0,
     entry.idle_reason || "",
     Number(entry.total_hours ?? entry.hours ?? 0),
@@ -188,6 +202,7 @@ export function summaryRow(user, entries) {
   return [
     user.name,
     mine.filter((en) => en.status === "present").length,
+    mine.filter((en) => en.status === "half_day").length,
     mine.filter((en) => en.status === "absent").length,
     mine.filter((en) => en.status === "leave").length,
     round2(mine.reduce((s, en) => s + Number(en.total_hours ?? en.hours ?? 0), 0)),

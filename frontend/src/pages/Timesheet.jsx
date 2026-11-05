@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, AlertTriangle, Check, X as XIcon, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, AlertTriangle, Check, X as XIcon, Download, Plus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 
 const STATUS_STYLE = {
@@ -17,8 +17,28 @@ const STATUS_STYLE = {
 };
 
 const TASK_CATEGORIES = ["Core Activity", "Ad-hoc Activity assigned by team", "Other Activities"];
+const DAY_MARKS = [
+  { value: "present", label: "Present" },
+  { value: "half_day", label: "Half day" },
+  { value: "absent", label: "Absent" },
+  { value: "leave", label: "Leave" },
+];
 
 const emptyTasks = () => TASK_CATEGORIES.map((c) => ({ category: c, hours: 0, note: "" }));
+const workedDay = (status) => status === "present" || status === "half_day";
+
+function statusLabel(status) {
+  return DAY_MARKS.find((mark) => mark.value === status)?.label || (status ? status.charAt(0).toUpperCase() + status.slice(1) : "");
+}
+
+function tasksFromEntry(entry) {
+  const saved = (entry?.tasks || []).map((task) => ({
+    category: TASK_CATEGORIES.includes(task.category) ? task.category : "Core Activity",
+    hours: task.hours ?? 0,
+    note: task.note || "",
+  }));
+  return saved.length ? saved : emptyTasks();
+}
 
 function TaskBreakdown({ entry }) {
   const tasks = entry.tasks || [];
@@ -109,9 +129,7 @@ export default function Timesheet() {
   const openDay = (date) => {
     const e = entries[date];
     if (e) {
-      const tasks = emptyTasks();
-      (e.tasks || []).forEach((t, i) => { if (i < tasks.length) tasks[i] = { category: t.category, hours: t.hours, note: t.note || "" }; });
-      setForm({ status: e.status, tasks, idle_hours: e.idle_hours || 0, idle_reason: e.idle_reason || "", achievements: e.achievements || "" });
+      setForm({ status: e.status, tasks: tasksFromEntry(e), idle_hours: e.idle_hours || 0, idle_reason: e.idle_reason || "", achievements: e.achievements || "" });
     } else {
       setForm({ status: "present", tasks: emptyTasks(), idle_hours: 0, idle_reason: "", achievements: "" });
     }
@@ -174,6 +192,15 @@ export default function Timesheet() {
     setForm({ ...form, tasks });
   };
 
+  const addTask = () => {
+    setForm({ ...form, tasks: [...form.tasks, { category: "Core Activity", hours: 0, note: "" }] });
+  };
+
+  const removeTask = (index) => {
+    if (form.tasks.length <= 1) return;
+    setForm({ ...form, tasks: form.tasks.filter((_, i) => i !== index) });
+  };
+
   const monthLabel = new Date(`${month}-02`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
   const todayIso = new Date().toLocaleDateString("en-CA");
 
@@ -231,7 +258,7 @@ export default function Timesheet() {
                 }`}
               >
                 <span>{Number(date.slice(-2))}</span>
-                {e && <span className="text-[9px] uppercase tracking-wide">{e.status === "present" ? `${st} · ${e.total_hours ?? e.hours ?? 0}h` : e.status}</span>}
+                {e && <span className="text-[9px] uppercase tracking-wide">{workedDay(e.status) ? `${st} · ${e.total_hours ?? e.hours ?? 0}h` : statusLabel(e.status)}</span>}
                 {missed && <span className="text-[9px] uppercase tracking-wide">missing</span>}
               </button>
             );
@@ -285,7 +312,7 @@ export default function Timesheet() {
                 <div className="flex flex-wrap items-center gap-3 justify-between">
                   <div>
                     <div className="font-semibold text-slate-900">{a.user_name} — {a.date}</div>
-                    <div className="text-xs text-slate-500 mt-0.5 capitalize">{a.status} · {a.total_hours ?? a.hours ?? 0}h utilised{(a.idle_hours || 0) > 0 ? ` · ${a.idle_hours}h idle` : ""}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{statusLabel(a.status)} · {a.total_hours ?? a.hours ?? 0}h utilised{(a.idle_hours || 0) > 0 ? ` · ${a.idle_hours}h idle` : ""}</div>
                   </div>
                   <span className="text-xs px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 border border-amber-300/40 font-semibold uppercase tracking-wide">Pending</span>
                 </div>
@@ -314,7 +341,7 @@ export default function Timesheet() {
       )}
 
       <Dialog open={!!selected} onOpenChange={(o) => !o && setSelected(null)}>
-        <DialogContent data-testid="timesheet-entry-dialog" className="max-w-2xl">
+        <DialogContent data-testid="timesheet-entry-dialog" className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display">Timesheet — {selected}</DialogTitle>
           </DialogHeader>
@@ -325,26 +352,35 @@ export default function Timesheet() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="space-y-2 w-56">
-                <Label>Status</Label>
-                <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-                  <SelectTrigger data-testid="timesheet-status-select"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="present">Present</SelectItem>
-                    <SelectItem value="absent">Absent</SelectItem>
-                    <SelectItem value="leave">Leave</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2">
+                <Label>Mark the day</Label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="timesheet-day-mark">
+                  {DAY_MARKS.map((mark) => (
+                    <button
+                      key={mark.value}
+                      type="button"
+                      data-testid={`timesheet-status-${mark.value}`}
+                      onClick={() => setForm({ ...form, status: mark.value })}
+                      className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
+                        form.status === mark.value
+                          ? "border-slate-900 bg-slate-900 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {mark.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {form.status === "present" ? (
+              {workedDay(form.status) ? (
                 <>
                   <div className="space-y-3" data-testid="timesheet-task-rows">
-                    <div className="grid grid-cols-[1fr_90px] sm:grid-cols-[220px_90px_1fr] gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1">
+                    <div className="grid grid-cols-[1fr_90px_32px] sm:grid-cols-[220px_90px_1fr_32px] gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400 px-1">
                       <span>Activity</span><span>Hours</span><span className="hidden sm:block">What you did</span>
                     </div>
                     {form.tasks.map((t, i) => (
-                      <div key={i} className="grid grid-cols-[1fr_90px] sm:grid-cols-[220px_90px_1fr] gap-2 items-center" data-testid={`timesheet-task-row-${i}`}>
+                      <div key={i} className="grid grid-cols-[1fr_90px_32px] sm:grid-cols-[220px_90px_1fr_32px] gap-2 items-center" data-testid={`timesheet-task-row-${i}`}>
                         <Select value={t.category} onValueChange={(v) => setTask(i, { category: v })}>
                           <SelectTrigger data-testid={`timesheet-task-category-${i}`} className="text-xs"><SelectValue /></SelectTrigger>
                           <SelectContent>
@@ -356,9 +392,19 @@ export default function Timesheet() {
                         <Input placeholder="What you did…" data-testid={`timesheet-task-note-${i}`}
                           value={t.note} onChange={(e) => setTask(i, { note: e.target.value })}
                           className="col-span-2 sm:col-span-1" />
+                        <button
+                          type="button"
+                          aria-label="Remove activity"
+                          data-testid={`timesheet-task-remove-${i}`}
+                          onClick={() => removeTask(i)}
+                          disabled={form.tasks.length <= 1}
+                          className="h-8 w-8 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-30 disabled:hover:bg-transparent"
+                        >
+                          <XIcon className="h-3.5 w-3.5 mx-auto" />
+                        </button>
                       </div>
                     ))}
-                    <div className="grid grid-cols-[1fr_90px] sm:grid-cols-[220px_90px_1fr] gap-2 items-center" data-testid="timesheet-idle-row">
+                    <div className="grid grid-cols-[1fr_90px_32px] sm:grid-cols-[220px_90px_1fr_32px] gap-2 items-center" data-testid="timesheet-idle-row">
                       <div className="text-xs font-medium text-slate-500 px-1">Idle hours</div>
                       <Input type="number" min="0" max="24" step="0.5" data-testid="timesheet-idle-hours-input"
                         value={form.idle_hours} onChange={(e) => setForm({ ...form, idle_hours: e.target.value })} />
@@ -367,6 +413,15 @@ export default function Timesheet() {
                         value={form.idle_reason} onChange={(e) => setForm({ ...form, idle_reason: e.target.value })}
                         className="col-span-2 sm:col-span-1" />
                     </div>
+                    <button
+                      type="button"
+                      data-testid="timesheet-add-task"
+                      onClick={addTask}
+                      className="inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-xs font-semibold text-slate-600 hover:text-slate-900"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Add activity
+                    </button>
+                    <p className="text-[11px] text-slate-400 -mt-1">Each row keeps its own hours, even when two tasks are the same type.</p>
                     <div className="flex items-center justify-between rounded-xl bg-slate-900 text-white px-4 py-3" data-testid="timesheet-total-hours">
                       <span className="text-xs font-semibold tracking-[0.12em] uppercase text-slate-400">Total time utilised</span>
                       <span className="font-display font-bold text-lg">{totalHours}h <span className="text-xs text-slate-400 font-normal">(+{Number(form.idle_hours) || 0}h idle)</span></span>
@@ -391,7 +446,7 @@ export default function Timesheet() {
           )}
           <DialogFooter>
             {entries[selected]?.approval_status !== "approved" && (
-              <Button data-testid="timesheet-submit-button" onClick={submit} disabled={saving || (form.status === "present" && totalHours === 0) || (Number(form.idle_hours) > 0 && !form.idle_reason.trim())} className="bg-slate-900 hover:bg-slate-800 text-white">
+              <Button data-testid="timesheet-submit-button" onClick={submit} disabled={saving || (workedDay(form.status) && totalHours === 0) || (Number(form.idle_hours) > 0 && !form.idle_reason.trim())} className="bg-slate-900 hover:bg-slate-800 text-white">
                 {saving ? "Submitting…" : "Submit for approval"}
               </Button>
             )}

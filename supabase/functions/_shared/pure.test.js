@@ -70,6 +70,21 @@ test("timesheet validation keeps the FastAPI messages", () => {
   });
   assert.equal(ok.total, 6);
   assert.equal(ok.kept.length, 1);
+  const split = validateTimesheet({
+    date: "2026-11-01",
+    status: "half_day",
+    tasks: [
+      { category: "Core Activity", hours: 2, note: "standup" },
+      { category: "Core Activity", hours: 2, note: "spec" },
+    ],
+    idle_hours: 0,
+    idle_reason: "",
+    today: "2026-11-01",
+  });
+  assert.equal(split.total, 4);
+  assert.equal(split.kept.length, 2);
+  assert.equal(split.kept[0].note, "standup");
+  assert.equal(split.kept[1].note, "spec");
 });
 
 test("admin export includes every other active person", () => {
@@ -99,11 +114,14 @@ test("excel rows and workbook contain both sheets", () => {
   assert.equal(row[3], 4);
   assert.equal(row[4], 1.5);
   assert.equal(row[2], "Present");
+  assert.match(row[6], /Core Activity: 4h/);
+  assert.match(row[6], /Ad-hoc Activity assigned by team: 1.5h/);
   const summary = summaryRow({ id: "u1", name: "Sanjay" }, [
     { user_id: "u1", status: "present", total_hours: 5.5, idle_hours: 0.5 },
+    { user_id: "u1", status: "half_day", total_hours: 4, idle_hours: 0 },
     { user_id: "u1", status: "leave", total_hours: 0, idle_hours: 0 },
   ]);
-  assert.deepEqual(summary, ["Sanjay", 1, 0, 1, 5.5, 0.5]);
+  assert.deepEqual(summary, ["Sanjay", 1, 1, 0, 1, 9.5, 0.5]);
   const bytes = buildXlsx([
     { name: "Timesheets", headers: ["Employee"], rows: [row], widths: [18] },
     { name: "Summary", headers: ["Employee"], rows: [summary], widths: [18] },
