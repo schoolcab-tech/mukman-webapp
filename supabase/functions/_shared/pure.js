@@ -124,10 +124,20 @@ export function exportScope(users, userId, role) {
     scope.push(u);
     stack.push(...(children.get(String(u.id)) || []));
   }
+  const seen = new Set(scope.map((u) => String(u.id)));
+  for (const u of users) {
+    const also = Array.isArray(u.also_reports_to) ? u.also_reports_to.map(String) : [];
+    if (also.includes(String(userId)) && !seen.has(String(u.id)) && String(u.id) !== String(userId)) {
+      scope.push(u);
+      seen.add(String(u.id));
+    }
+  }
   if (role === "admin") {
-    const have = new Set(scope.map((u) => String(u.id)));
     for (const u of users) {
-      if (!have.has(String(u.id)) && String(u.id) !== String(userId)) scope.push(u);
+      if (!seen.has(String(u.id)) && String(u.id) !== String(userId)) {
+        scope.push(u);
+        seen.add(String(u.id));
+      }
     }
   }
   return scope;
@@ -194,6 +204,88 @@ export function timesheetDetailRow(entry) {
     entry.achievements || "",
     titleWord(entry.approval_status),
     entry.comments || "",
+  ];
+}
+
+export const TEAM_HEADERS = ["Employee", "Email", "Phone", "Title", "Department", "Reports to", "Role", "Status"];
+export const TEAM_WIDTHS = [22, 28, 16, 28, 22, 22, 12, 12];
+
+export const ACTIVITY_HEADERS = ["Employee", "Date", "Day", "Activity", "Hours", "What was done", "Approval"];
+export const ACTIVITY_WIDTHS = [22, 12, 12, 36, 10, 42, 14];
+
+export const REVIEW_HEADERS = ["Employee", "Period", "Label", "Summary", "Status", "Approval trail", "Submitted"];
+export const REVIEW_WIDTHS = [22, 14, 16, 48, 12, 42, 14];
+
+export const FEEDBACK_HEADERS = ["Employee", "Subject", "Message", "Status", "History", "Submitted"];
+export const FEEDBACK_WIDTHS = [22, 28, 48, 12, 42, 14];
+
+export function teamRow(person, managerName) {
+  return [
+    person.name || "",
+    person.email || "",
+    person.phone || "",
+    person.title || "",
+    person.department || "",
+    managerName || "",
+    person.role === "admin" ? "Admin" : "Employee",
+    person.active === false ? "Inactive" : "Active",
+  ];
+}
+
+export function activityRows(entries) {
+  const rows = [];
+  for (const entry of entries || []) {
+    const tasks = Array.isArray(entry.tasks) ? entry.tasks : [];
+    if (!tasks.length) {
+      rows.push([entry.user_name || "", entry.date || "", statusLabel(entry.status), "", "", "", titleWord(entry.approval_status)]);
+      continue;
+    }
+    for (const task of tasks) {
+      rows.push([
+        entry.user_name || "",
+        entry.date || "",
+        statusLabel(entry.status),
+        task.category || "",
+        Number(task.hours) || 0,
+        task.note || "",
+        titleWord(entry.approval_status),
+      ]);
+    }
+  }
+  return rows;
+}
+
+function trail(steps) {
+  return (Array.isArray(steps) ? steps : [])
+    .map((step) => {
+      const who = step.name || "Manager";
+      const what = statusLabel(step.action || "");
+      const note = String(step.comment || "").trim();
+      return `${what} by ${who}${note ? `: ${note}` : ""}`;
+    })
+    .join("\n");
+}
+
+export function reviewRow(entry) {
+  return [
+    entry.user_name || "",
+    titleWord(entry.period_type),
+    entry.period_label || "",
+    entry.content || "",
+    statusLabel(entry.status),
+    trail(entry.chain),
+    String(entry.created_at || "").slice(0, 10),
+  ];
+}
+
+export function feedbackRow(entry) {
+  return [
+    entry.user_name || "",
+    entry.subject || "",
+    entry.message || "",
+    statusLabel(entry.status),
+    trail(entry.history),
+    String(entry.created_at || "").slice(0, 10),
   ];
 }
 

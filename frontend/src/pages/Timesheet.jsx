@@ -104,7 +104,10 @@ export default function Timesheet() {
     api.get("/penalty-rules").then((r) => setRules(r.data.filter((x) => x.enabled))).catch(() => {});
     api.get("/org-chart").then((r) => {
       const people = r.data.people || [];
-      setHasReportees(user.role === "admin" || people.some((p) => p.reports_to === user.id));
+      setHasReportees(
+        user.role === "admin" ||
+        people.some((p) => p.reports_to === user.id || (p.also_reports_to || []).includes(user.id)),
+      );
     }).catch(() => {});
   };
 
@@ -176,10 +179,10 @@ export default function Timesheet() {
       const url = URL.createObjectURL(res.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `mukman-timesheets-${expPeriod}.xlsx`;
+      a.download = `mukman-team-${expPeriod}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Excel summary downloaded");
+      toast.success("Team workbook downloaded");
     } catch (e) {
       toast.error("Export failed — check the date range or try again");
     } finally {
@@ -276,8 +279,8 @@ export default function Timesheet() {
         <section className="bg-white rounded-2xl border border-slate-200 p-5" data-testid="timesheet-export-card">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-52">
-              <div className="font-semibold text-slate-900">Team timesheet summary (Excel)</div>
-              <p className="text-xs text-slate-500 mt-0.5">Consolidated download for everyone reporting to you — direct and indirect.</p>
+              <div className="font-semibold text-slate-900">Export my team (Excel)</div>
+              <p className="text-xs text-slate-500 mt-0.5">Timesheets, each activity, reviews, and feedback for people who report to you, including indirect and dotted-line reports.</p>
             </div>
             <Select value={expPeriod} onValueChange={setExpPeriod}>
               <SelectTrigger data-testid="timesheet-export-period-select" className="w-44"><SelectValue /></SelectTrigger>
@@ -297,7 +300,7 @@ export default function Timesheet() {
             <Button data-testid="timesheet-export-download-button" onClick={downloadExport}
               disabled={exporting || (expPeriod === "custom" && (!expStart || !expEnd))}
               className="bg-slate-900 hover:bg-slate-800 text-white">
-              <Download className="h-4 w-4 mr-1.5" /> {exporting ? "Preparing…" : "Download Excel"}
+              <Download className="h-4 w-4 mr-1.5" /> {exporting ? "Preparing…" : "Export team"}
             </Button>
           </div>
         </section>

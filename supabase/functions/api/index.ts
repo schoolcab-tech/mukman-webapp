@@ -3,21 +3,33 @@ import bcryptImport from "npm:bcryptjs@2.4.3";
 import {
   AI_MODELS,
   AI_SYSTEM,
+  ACTIVITY_HEADERS,
+  ACTIVITY_WIDTHS,
+  FEEDBACK_HEADERS,
+  FEEDBACK_WIDTHS,
+  REVIEW_HEADERS,
+  REVIEW_WIDTHS,
   SUMMARY_HEADERS,
   SUMMARY_WIDTHS,
+  TEAM_HEADERS,
+  TEAM_WIDTHS,
   TIMESHEET_HEADERS,
   TIMESHEET_WIDTHS,
   accessCookie,
+  activityRows,
   apiPath,
   buildXlsx,
   exportScope,
+  feedbackRow,
   istDate,
   isUuid,
   monthBounds,
   periodRange,
   readCookie,
+  reviewRow,
   signJwt,
   summaryRow,
+  teamRow,
   timesheetDetailRow,
   timingSafeEqual,
   validateTimesheet,
@@ -559,15 +571,34 @@ async function exportTimesheets(req: Request, supabase: ReturnType<typeof client
     url.searchParams.get("end"),
   );
   if (!range) throw new HttpError(400, "Invalid period or date range");
-  const { data, error } = await supabase.from("users").select("id,name,reports_to,role").eq("active", true).limit(500);
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,name,email,phone,title,department,reports_to,also_reports_to,role,active")
+    .limit(500);
   fail(error);
-  const scope = exportScope(data || [], user.id, user.role);
+  const people = data || [];
+  const scope = exportScope(people, user.id, user.role);
   if (!scope.length) throw new HttpError(403, "You have no reportees to export");
+  const names = new Map(people.map((person) => [String(person.id), person.name]));
   const ids = scope.map((person) => person.id);
   const entries = await selectAll(
     () => supabase.from("timesheets").select("*").in("user_id", ids).gte("date", range.s).lte("date", range.e).order("date", { ascending: true }),
   );
+  const submittedFrom = `${range.s}T00:00:00+05:30`;
+  const submittedTo = `${range.e}T23:59:59.999+05:30`;
+  const reviews = await selectAll(
+    () => supabase.from("reviews").select("*").in("user_id", ids).gte("created_at", submittedFrom).lte("created_at", submittedTo).order("created_at", { ascending: true }),
+  );
+  const feedback = await selectAll(
+    () => supabase.from("feedback").select("*").in("user_id", ids).gte("created_at", submittedFrom).lte("created_at", submittedTo).order("created_at", { ascending: true }),
+  );
   const bytes = buildXlsx([
+    {
+      name: "Team",
+      headers: TEAM_HEADERS,
+      rows: scope.map((person) => teamRow(person, names.get(String(person.reports_to)) || "")),
+      widths: TEAM_WIDTHS,
+    },
     {
       name: "Timesheets",
       headers: TIMESHEET_HEADERS,
@@ -575,13 +606,31 @@ async function exportTimesheets(req: Request, supabase: ReturnType<typeof client
       widths: TIMESHEET_WIDTHS,
     },
     {
+      name: "Activities",
+      headers: ACTIVITY_HEADERS,
+      rows: activityRows(entries),
+      widths: ACTIVITY_WIDTHS,
+    },
+    {
       name: "Summary",
       headers: SUMMARY_HEADERS,
       rows: scope.map((person) => summaryRow(person, entries)),
       widths: SUMMARY_WIDTHS,
     },
+    {
+      name: "Reviews",
+      headers: REVIEW_HEADERS,
+      rows: reviews.map(reviewRow),
+      widths: REVIEW_WIDTHS,
+    },
+    {
+      name: "Feedback",
+      headers: FEEDBACK_HEADERS,
+      rows: feedback.map(feedbackRow),
+      widths: FEEDBACK_WIDTHS,
+    },
   ]);
-  const filename = `mukman-timesheets-${url.searchParams.get("period") || "month"}-${range.s}-to-${range.e}.xlsx`;
+  const filename = `mukman-team-${url.searchParams.get("period") || "month"}-${range.s}-to-${range.e}.xlsx`;
   return new Response(bytes, {
     headers: {
       "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

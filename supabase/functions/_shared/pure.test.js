@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  activityRows,
   apiPath,
   accessCookie,
   buildXlsx,
   exportScope,
+  feedbackRow,
   istDate,
   monthBounds,
   periodRange,
   readCookie,
+  reviewRow,
   signJwt,
   summaryRow,
   timesheetDetailRow,
@@ -96,6 +99,12 @@ test("admin export includes every other active person", () => {
   ];
   assert.deepEqual(exportScope(users, "b", "employee").map((u) => u.id), ["c"]);
   assert.deepEqual(exportScope(users, "a", "admin").map((u) => u.id).sort(), ["b", "c", "d"]);
+  const dotted = [
+    { id: "mgr", reports_to: null },
+    { id: "direct", reports_to: "mgr" },
+    { id: "dotted", reports_to: "other", also_reports_to: ["mgr"] },
+  ];
+  assert.deepEqual(exportScope(dotted, "mgr", "employee").map((u) => u.id).sort(), ["direct", "dotted"]);
 });
 
 test("excel rows and workbook contain both sheets", () => {
@@ -116,6 +125,40 @@ test("excel rows and workbook contain both sheets", () => {
   assert.equal(row[2], "Present");
   assert.match(row[6], /Core Activity: 4h/);
   assert.match(row[6], /Ad-hoc Activity assigned by team: 1.5h/);
+  const activities = activityRows([{
+    user_name: "Sanjay",
+    date: "2026-10-31",
+    status: "present",
+    approval_status: "pending",
+    tasks: [
+      { category: "Core Activity", hours: 2, note: "standup" },
+      { category: "Core Activity", hours: 2, note: "spec" },
+    ],
+  }]);
+  assert.equal(activities.length, 2);
+  assert.equal(activities[0][4], 2);
+  assert.equal(activities[1][5], "spec");
+  const review = reviewRow({
+    user_name: "Sanjay",
+    period_type: "weekly",
+    period_label: "2026-W44",
+    content: "Shipped",
+    status: "approved",
+    chain: [{ name: "Abhimanyu", action: "approved", comment: "ok" }],
+    created_at: "2026-10-31T10:00:00+05:30",
+  });
+  assert.equal(review[1], "Weekly");
+  assert.match(review[5], /Approved by Abhimanyu: ok/);
+  const feedback = feedbackRow({
+    user_name: "Sanjay",
+    subject: "Tools",
+    message: "Need access",
+    status: "open",
+    history: [],
+    created_at: "2026-10-31T10:00:00+05:30",
+  });
+  assert.equal(feedback[1], "Tools");
+  assert.equal(feedback[5], "2026-10-31");
   const summary = summaryRow({ id: "u1", name: "Sanjay" }, [
     { user_id: "u1", status: "present", total_hours: 5.5, idle_hours: 0.5 },
     { user_id: "u1", status: "half_day", total_hours: 4, idle_hours: 0 },
