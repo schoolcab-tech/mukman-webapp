@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
-import api from "@/lib/api";
+import api, { errText } from "@/lib/api";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Bell, MessageCircle, Megaphone, CheckCheck, AlertTriangle, Info } from "lucide-react";
+import { Bell, MessageCircle, Megaphone, CheckCheck, AlertTriangle, Info, Check, X as XIcon } from "lucide-react";
 
 const TYPE_META = {
   approval_request: { label: "Approval", cls: "bg-amber-100 text-amber-800 border-amber-300/40", icon: Bell, tab: "approvals" },
@@ -14,9 +16,28 @@ const TYPE_META = {
 
 export default function Notifications() {
   const [items, setItems] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [comments, setComments] = useState({});
+  const [acting, setActing] = useState(null);
 
-  const load = () => api.get("/notifications").then((r) => setItems(r.data)).catch(() => {});
+  const load = () => {
+    api.get("/notifications").then((r) => setItems(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    api.get("/timesheets/approvals").then((r) => setPending(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+  };
   useEffect(() => { load(); }, []);
+
+  const review = async (id, action) => {
+    setActing(id);
+    try {
+      await api.post(`/timesheets/${id}/${action}`, { comment: comments[id] || "" });
+      toast.success(action === "approve" ? "Timesheet approved" : "Timesheet rejected");
+      load();
+    } catch (e) {
+      toast.error(errText(e.response?.data?.detail));
+    } finally {
+      setActing(null);
+    }
+  };
 
   const markAll = async () => {
     await api.post("/notifications/read-all");
@@ -71,6 +92,37 @@ export default function Notifications() {
           <CheckCheck className="h-4 w-4 mr-2" /> Mark all read
         </Button>
       </div>
+
+      {pending.length > 0 && (
+        <section data-testid="notification-timesheet-approvals">
+          <h2 className="font-display text-xl font-semibold text-slate-900 mb-4">Timesheets waiting for approval ({pending.length})</h2>
+          <div className="space-y-3">
+            {pending.map((sheet) => (
+              <div key={sheet.id} className="bg-white rounded-2xl border border-amber-300/60 p-5" data-testid={`notification-timesheet-${sheet.id}`}>
+                <div className="font-semibold text-slate-900">{sheet.user_name} — {sheet.date}</div>
+                <p className="text-sm text-slate-500 mt-1 capitalize">{sheet.status} · {sheet.total_hours ?? sheet.hours ?? 0}h</p>
+                <div className="mt-4 flex flex-col sm:flex-row gap-2">
+                  <Input
+                    placeholder="Comment (optional)"
+                    value={comments[sheet.id] || ""}
+                    onChange={(e) => setComments({ ...comments, [sheet.id]: e.target.value })}
+                    data-testid={`notification-timesheet-comment-${sheet.id}`}
+                    className="sm:flex-1"
+                  />
+                  <div className="flex gap-2">
+                    <Button data-testid={`notification-timesheet-approve-${sheet.id}`} disabled={acting === sheet.id} onClick={() => review(sheet.id, "approve")} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+                      <Check className="h-4 w-4 mr-1" /> Approve
+                    </Button>
+                    <Button data-testid={`notification-timesheet-reject-${sheet.id}`} disabled={acting === sheet.id} onClick={() => review(sheet.id, "reject")} variant="outline" className="border-rose-300 text-rose-600 hover:bg-rose-50">
+                      <XIcon className="h-4 w-4 mr-1" /> Reject
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <Tabs defaultValue="all">
         <TabsList data-testid="notifications-tabs">

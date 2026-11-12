@@ -13,6 +13,7 @@ import {
   readCookie,
   reviewRow,
   signJwt,
+  overdueTimesheets,
   summaryRow,
   timesheetDetailRow,
   validateTimesheet,
@@ -176,6 +177,29 @@ test("excel rows and workbook contain both sheets", () => {
   assert.match(text, /Sanjay/);
   assert.equal(bytes[0], 0x50);
   assert.equal(bytes[1], 0x4b);
+});
+
+test("overdue timesheets list only people missing more than 3 working days", () => {
+  const today = "2026-11-12";
+  const people = [
+    { id: "asha", name: "Asha", created_at: "2026-01-01T00:00:00+05:30" },
+    { id: "dev", name: "Dev", created_at: "2026-01-01T00:00:00+05:30" },
+    { id: "new", name: "New Hire", created_at: "2026-11-11T02:00:00.000Z" },
+    { id: "blank", name: "Blank", created_at: "2026-11-06T00:00:00+05:30" },
+  ];
+  const filled = [
+    { user_id: "asha", date: "2026-11-07" },
+    { user_id: "dev", date: "2026-11-09" },
+    { user_id: "new", date: "2026-11-06" },
+  ];
+  const alerts = overdueTimesheets(people, filled, today);
+  assert.deepEqual(
+    alerts.map((alert) => [alert.name, alert.days]),
+    [
+      ["Blank", ["2026-11-06", "2026-11-07", "2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]],
+      ["Asha", ["2026-11-09", "2026-11-10", "2026-11-11", "2026-11-12"]],
+    ],
+  );
 });
 
 test("jwt expires and rejects a bad signature", async () => {

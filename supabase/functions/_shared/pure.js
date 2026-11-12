@@ -289,6 +289,58 @@ export function feedbackRow(entry) {
   ];
 }
 
+function isoDay(value) {
+  if (!value) return "";
+  if (value instanceof Date) return istDate(value);
+  const match = String(value).match(/\d{4}-\d{2}-\d{2}/);
+  return match ? match[0] : "";
+}
+
+function isSunday(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 0;
+}
+
+function gapStart(createdAt, today) {
+  const joined = isoDay(createdAt);
+  if (!joined) return addDays(today, -800);
+  return joined > today ? today : joined;
+}
+
+/** Open run of unfilled working days ending today. Sundays do not count. Only people missing more than minDays. */
+export function overdueTimesheets(people, filled, today, minDays = 3) {
+  const byUser = new Map();
+  for (const row of filled || []) {
+    const id = String(row.user_id ?? "");
+    const date = isoDay(row.date);
+    if (!id || !date || date > today) continue;
+    if (!byUser.has(id)) byUser.set(id, new Set());
+    byUser.get(id).add(date);
+  }
+  const alerts = [];
+  for (const person of people || []) {
+    const id = String(person.id ?? "");
+    if (!id) continue;
+    const have = byUser.get(id) || new Set();
+    const start = gapStart(person.created_at, today);
+    const missing = [];
+    let cursor = today;
+    let guard = 0;
+    while (cursor >= start && guard < 800) {
+      if (!isSunday(cursor)) {
+        if (have.has(cursor)) break;
+        missing.push(cursor);
+      }
+      cursor = addDays(cursor, -1);
+      guard += 1;
+    }
+    missing.reverse();
+    if (missing.length > minDays) alerts.push({ id: person.id, name: person.name || "", days: missing });
+  }
+  alerts.sort((a, b) => b.days.length - a.days.length || String(a.name).localeCompare(String(b.name)));
+  return alerts;
+}
+
 export function summaryRow(user, entries) {
   const mine = entries.filter((en) => String(en.user_id) === String(user.id));
   return [

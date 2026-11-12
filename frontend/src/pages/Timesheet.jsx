@@ -31,6 +31,64 @@ function statusLabel(status) {
   return DAY_MARKS.find((mark) => mark.value === status)?.label || (status ? status.charAt(0).toUpperCase() + status.slice(1) : "");
 }
 
+function formatGapDate(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  });
+}
+
+async function exportError(error) {
+  const data = error?.response?.data;
+  if (data instanceof Blob) {
+    try {
+      const parsed = JSON.parse(await data.text());
+      return errText(parsed.detail);
+    } catch {
+      return "Export failed — check the date range or try again";
+    }
+  }
+  return errText(data?.detail) || "Export failed — check the date range or try again";
+}
+
+function teamScope(people, user) {
+  if (!user) return [];
+  const children = new Map();
+  for (const person of people) {
+    if (!person.reports_to) continue;
+    const key = String(person.reports_to);
+    if (!children.has(key)) children.set(key, []);
+    children.get(key).push(person);
+  }
+  const scope = [];
+  const seen = new Set();
+  const stack = [...(children.get(String(user.id)) || [])];
+  while (stack.length) {
+    const person = stack.pop();
+    if (!person || seen.has(person.id) || person.id === user.id) continue;
+    seen.add(person.id);
+    scope.push(person);
+    stack.push(...(children.get(String(person.id)) || []));
+  }
+  for (const person of people) {
+    if ((person.also_reports_to || []).includes(user.id) && !seen.has(person.id) && person.id !== user.id) {
+      scope.push(person);
+      seen.add(person.id);
+    }
+  }
+  if (user.role === "admin") {
+    for (const person of people) {
+      if (!seen.has(person.id) && person.id !== user.id) {
+        scope.push(person);
+        seen.add(person.id);
+      }
+    }
+  }
+  return scope.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
 function tasksFromEntry(entry) {
   const saved = (entry?.tasks || []).map((task) => ({
     category: TASK_CATEGORIES.includes(task.category) ? task.category : "Core Activity",
@@ -89,29 +147,45 @@ export default function Timesheet() {
   const [saving, setSaving] = useState(false);
   const [comments, setComments] = useState({});
   const [hasReportees, setHasReportees] = useState(false);
+  const [people, setPeople] = useState([]);
+  const [viewUser, setViewUser] = useState("");
   const [expPeriod, setExpPeriod] = useState("month");
   const [expStart, setExpStart] = useState("");
   const [expEnd, setExpEnd] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [personId, setPersonId] = useState("");
+  const [personStart, setPersonStart] = useState("");
+  const [personEnd, setPersonEnd] = useState("");
+  const [exportingPerson, setExportingPerson] = useState(false);
+  const [gaps, setGaps] = useState([]);
 
   const load = () => {
-    api.get(`/timesheets/my?month=${month}`).then((r) => {
+    const sheetUrl = viewUser
+      ? `/timesheets/reportee?user_id=${viewUser}&month=${month}`
+      : `/timesheets/my?month=${month}`;
+    api.get(sheetUrl).then((r) => {
       const map = {};
-      r.data.forEach((e) => { map[e.date] = e; });
+      (Array.isArray(r.data) ? r.data : []).forEach((e) => { map[e.date] = e; });
       setEntries(map);
-    }).catch(() => {});
-    api.get("/timesheets/approvals").then((r) => setApprovals(r.data)).catch(() => {});
-    api.get("/penalty-rules").then((r) => setRules(r.data.filter((x) => x.enabled))).catch(() => {});
+    }).catch((e) => {
+      setEntries({});
+      if (viewUser) toast.error(errText(e.response?.data?.detail));
+    });
+    if (user?.role === "admin") setHasReportees(true);
+    api.get("/timesheets/approvals").then((r) => setApprovals(Array.isArray(r.data) ? r.data : [])).catch(() => {});
+    api.get("/timesheets/gaps").then((r) => setGaps(Array.isArray(r.data) ? r.data : [])).catch(() => setGaps([]));
+    api.get("/penalty-rules").then((r) => setRules((Array.isArray(r.data) ? r.data : []).filter((x) => x.enabled))).catch(() => {});
     api.get("/org-chart").then((r) => {
-      const people = r.data.people || [];
+      const list = Array.isArray(r.data.people) ? r.data.people : [];
+      setPeople(list);
       setHasReportees(
-        user.role === "admin" ||
-        people.some((p) => p.reports_to === user.id || (p.also_reports_to || []).includes(user.id)),
+        user?.role === "admin" ||
+        list.some((p) => p.reports_to === user.id || (p.also_reports_to || []).includes(user.id)),
       );
     }).catch(() => {});
   };
 
-  useEffect(load, [month]);
+  useEffect(load, [month, viewUser]);
 
   const grid = useMemo(() => {
     const [y, m] = month.split("-").map(Number);
@@ -184,9 +258,35 @@ export default function Timesheet() {
       URL.revokeObjectURL(url);
       toast.success("Team workbook downloaded");
     } catch (e) {
-      toast.error("Export failed — check the date range or try again");
+      toast.error(await exportError(e));
     } finally {
       setExporting(false);
+    }
+  };
+
+  const downloadPerson = async () => {
+    const person = reportees.find((candidate) => candidate.id === personId);
+    if (!person || !personStart || !personEnd || personStart > personEnd) {
+      toast.error("Choose a person and a valid date range");
+      return;
+    }
+    setExportingPerson(true);
+    try {
+      const res = await api.get("/timesheets/export", {
+        params: { period: "custom", start: personStart, end: personEnd, user_id: person.id },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mukman-${person.name.replace(/\s+/g, "-")}-${personStart}-to-${personEnd}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success(`${person.name}'s timesheet downloaded`);
+    } catch (e) {
+      toast.error(await exportError(e));
+    } finally {
+      setExportingPerson(false);
     }
   };
 
@@ -204,6 +304,20 @@ export default function Timesheet() {
     setForm({ ...form, tasks: form.tasks.filter((_, i) => i !== index) });
   };
 
+  const canExport = user?.role === "admin" || hasReportees;
+  const reportees = useMemo(() => teamScope(people, user), [people, user]);
+  const openGap = (person) => {
+    const latest = person.days?.[person.days.length - 1];
+    if (latest) setMonth(latest.slice(0, 7));
+    setSelected(null);
+    if (person.id === user?.id) {
+      setViewUser("");
+      return;
+    }
+    if (reportees.some((candidate) => candidate.id === person.id)) setViewUser(person.id);
+  };
+  const viewed = reportees.find((person) => person.id === viewUser) || null;
+  const reporteeEntries = Object.values(entries).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   const monthLabel = new Date(`${month}-02`).toLocaleDateString("en-IN", { month: "long", year: "numeric" });
   const todayIso = new Date().toLocaleDateString("en-CA");
 
@@ -218,64 +332,60 @@ export default function Timesheet() {
         </p>
       </div>
 
-      {rules.length > 0 && (
-        <div className="grid sm:grid-cols-2 gap-3" data-testid="timesheet-penalty-rules">
-          {rules.map((r) => (
-            <div key={r.key} className="flex gap-3 items-start rounded-xl border border-red-300/40 bg-red-50 p-4">
-              <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
-              <div>
-                <div className="text-sm font-semibold text-red-900">{r.label} — {r.percent}% {r.applies_to === "esop" ? "ownership/ESOP" : "salary"} impact</div>
-                <div className="text-xs text-red-700 mt-1">{r.description}</div>
-              </div>
+      {gaps.length > 0 && (
+        <section className="rounded-2xl border border-red-300/60 bg-red-50 overflow-hidden" data-testid="timesheet-gap-alert">
+          <div className="flex gap-3 items-start px-5 pt-5 pb-3">
+            <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            <div>
+              <h2 className="text-sm font-semibold text-red-900">Timesheets not filled for more than 3 days</h2>
+              <p className="text-xs text-red-700 mt-1">
+                Working days with no timesheet, counted back from today until the last filled day. Sundays are not counted. Only people missing more than 3 days are listed.
+              </p>
             </div>
-          ))}
-        </div>
+          </div>
+          <div className="overflow-x-auto mx-3 mb-3 rounded-xl border border-red-100 bg-white">
+            <table className="w-full text-sm" data-testid="timesheet-gap-table">
+              <thead>
+                <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  <th className="px-4 py-3 w-56">Name</th>
+                  <th className="px-4 py-3">Days not filled</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gaps.map((person) => {
+                  const days = Array.isArray(person.days) ? person.days : [];
+                  const canOpen = person.id === user?.id || reportees.some((candidate) => candidate.id === person.id);
+                  return (
+                    <tr key={person.id} className="border-b border-slate-50 last:border-0 align-top" data-testid={`timesheet-gap-row-${person.id}`}>
+                      <td className="px-4 py-3">
+                        {canOpen ? (
+                          <button type="button" onClick={() => openGap(person)} className="font-semibold text-slate-900 hover:underline text-left">
+                            {person.name}
+                          </button>
+                        ) : (
+                          <div className="font-semibold text-slate-900">{person.name}</div>
+                        )}
+                        <div className="text-xs text-red-700 mt-0.5">{days.length} days</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1.5">
+                          {days.map((day) => (
+                            <span key={day} className="text-xs font-medium text-red-800 bg-red-100 border border-red-200 rounded-full px-2 py-0.5">
+                              {formatGapDate(day)}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
-      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7">
-        <div className="flex items-center justify-between mb-5">
-          <h2 className="font-display text-xl font-semibold text-slate-900" data-testid="timesheet-month-label">{monthLabel}</h2>
-          <div className="flex gap-2">
-            <Button data-testid="timesheet-prev-month" variant="outline" size="icon" onClick={() => shiftMonth(-1)}><ChevronLeft className="h-4 w-4" /></Button>
-            <Button data-testid="timesheet-next-month" variant="outline" size="icon" onClick={() => shiftMonth(1)}><ChevronRight className="h-4 w-4" /></Button>
-          </div>
-        </div>
-        <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold tracking-wider text-slate-400 mb-2">
-          {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => <div key={d}>{d}</div>)}
-        </div>
-        <div className="grid grid-cols-7 gap-1.5">
-          {grid.map((date, i) => {
-            if (!date) return <div key={`blank-${i}`} />;
-            const e = entries[date];
-            const st = e ? e.approval_status : null;
-            const isFuture = date > todayIso;
-            const missed = !e && !isFuture && new Date(date).getDay() !== 0;
-            return (
-              <button
-                key={date}
-                data-testid={`timesheet-day-${date}`}
-                onClick={() => !isFuture && openDay(date)}
-                disabled={isFuture}
-                className={`aspect-square rounded-xl border text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed ${
-                  st ? STATUS_STYLE[st] : missed ? "border-red-300/60 bg-red-50/60 text-red-700 hover:bg-red-50" : "border-slate-200 text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                <span>{Number(date.slice(-2))}</span>
-                {e && <span className="text-[9px] uppercase tracking-wide">{workedDay(e.status) ? `${st} · ${e.total_hours ?? e.hours ?? 0}h` : statusLabel(e.status)}</span>}
-                {missed && <span className="text-[9px] uppercase tracking-wide">missing</span>}
-              </button>
-            );
-          })}
-        </div>
-        <div className="flex flex-wrap gap-4 mt-5 text-xs text-slate-500">
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-200 border border-emerald-400/50" /> Approved</span>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-200 border border-amber-400/50" /> Pending approval</span>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-rose-200 border border-rose-400/50" /> Rejected</span>
-          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 border border-red-400/60" /> Missing</span>
-        </div>
-      </div>
-
-      {hasReportees && (
+      {canExport && (
         <section className="bg-white rounded-2xl border border-slate-200 p-5" data-testid="timesheet-export-card">
           <div className="flex flex-wrap items-end gap-3">
             <div className="flex-1 min-w-52">
@@ -303,8 +413,125 @@ export default function Timesheet() {
               <Download className="h-4 w-4 mr-1.5" /> {exporting ? "Preparing…" : "Export team"}
             </Button>
           </div>
+          <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-52">
+              <div className="font-semibold text-slate-900">Export one person (Excel)</div>
+              <p className="text-xs text-slate-500 mt-0.5">One reportee’s timesheet and each activity for any start and end date.</p>
+            </div>
+            <Select value={personId || undefined} onValueChange={setPersonId}>
+              <SelectTrigger data-testid="timesheet-export-person-select" className="w-52"><SelectValue placeholder="Choose a person" /></SelectTrigger>
+              <SelectContent>
+                {reportees.map((person) => (
+                  <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input type="date" data-testid="timesheet-export-person-start" value={personStart} onChange={(e) => setPersonStart(e.target.value)} className="w-40" />
+            <Input type="date" data-testid="timesheet-export-person-end" value={personEnd} onChange={(e) => setPersonEnd(e.target.value)} className="w-40" />
+            <Button data-testid="timesheet-export-person-button" onClick={downloadPerson}
+              disabled={exportingPerson || !personId || !personStart || !personEnd || personStart > personEnd}
+              className="bg-slate-900 hover:bg-slate-800 text-white">
+              <Download className="h-4 w-4 mr-1.5" /> {exportingPerson ? "Preparing…" : "Export person"}
+            </Button>
+          </div>
         </section>
       )}
+
+      {rules.length > 0 && (
+        <div className="grid sm:grid-cols-2 gap-3" data-testid="timesheet-penalty-rules">
+          {rules.map((r) => (
+            <div key={r.key} className="flex gap-3 items-start rounded-xl border border-red-300/40 bg-red-50 p-4">
+              <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="text-sm font-semibold text-red-900">{r.label} — {r.percent}% {r.applies_to === "esop" ? "ownership/ESOP" : "salary"} impact</div>
+                <div className="text-xs text-red-700 mt-1">{r.description}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="bg-white rounded-3xl border border-slate-200 p-5 sm:p-7">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div>
+            <h2 className="font-display text-xl font-semibold text-slate-900" data-testid="timesheet-month-label">
+              {viewed ? `${viewed.name} — ${monthLabel}` : monthLabel}
+            </h2>
+            {viewed && <p className="text-xs text-slate-500 mt-1">Submitted days for this month are listed here, including approved ones.</p>}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {reportees.length > 0 && (
+              <Select value={viewUser || "me"} onValueChange={(value) => { setSelected(null); setViewUser(value === "me" ? "" : value); }}>
+                <SelectTrigger data-testid="timesheet-reportee-select" className="w-56"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="me">My timesheet</SelectItem>
+                  {reportees.map((person) => (
+                    <SelectItem key={person.id} value={person.id}>{person.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Button data-testid="timesheet-prev-month" variant="outline" size="icon" onClick={() => shiftMonth(-1)}><ChevronLeft className="h-4 w-4" /></Button>
+            <Button data-testid="timesheet-next-month" variant="outline" size="icon" onClick={() => shiftMonth(1)}><ChevronRight className="h-4 w-4" /></Button>
+          </div>
+        </div>
+        {viewed && (
+          <div className="space-y-3 mb-6" data-testid="timesheet-reportee-list">
+            {reporteeEntries.length === 0 ? (
+              <p className="text-sm text-slate-500">No timesheet submitted for {monthLabel}.</p>
+            ) : reporteeEntries.map((entry) => (
+              <div key={entry.id || entry.date} className="rounded-2xl border border-slate-200 p-4" data-testid={`timesheet-reportee-day-${entry.date}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-slate-900">{entry.date}</div>
+                    <div className="text-xs text-slate-500 mt-0.5">{statusLabel(entry.status)} · {entry.total_hours ?? entry.hours ?? 0}h utilised{(entry.idle_hours || 0) > 0 ? ` · ${entry.idle_hours}h idle` : ""}</div>
+                  </div>
+                  <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold uppercase tracking-wide ${STATUS_STYLE[entry.approval_status] || "bg-slate-100 text-slate-600 border-slate-200"}`}>{entry.approval_status}</span>
+                </div>
+                <TaskBreakdown entry={entry} />
+                {entry.comments && <p className="text-xs text-slate-500 mt-2">Comment: {entry.comments}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="grid grid-cols-7 gap-1.5 text-center text-[11px] font-semibold tracking-wider text-slate-400 mb-2">
+          {["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => <div key={d}>{d}</div>)}
+        </div>
+        <div className="grid grid-cols-7 gap-1.5">
+          {grid.map((date, i) => {
+            if (!date) return <div key={`blank-${i}`} />;
+            const e = entries[date];
+            const st = e ? e.approval_status : null;
+            const isFuture = date > todayIso;
+            const missed = !e && !isFuture && new Date(date).getDay() !== 0;
+            return (
+              <button
+                key={date}
+                data-testid={`timesheet-day-${date}`}
+                onClick={() => {
+                  if (isFuture) return;
+                  if (viewUser) { setSelected(date); return; }
+                  openDay(date);
+                }}
+                disabled={isFuture}
+                className={`aspect-square rounded-xl border text-sm font-medium flex flex-col items-center justify-center gap-0.5 transition-all duration-150 disabled:opacity-30 disabled:cursor-not-allowed ${
+                  st ? STATUS_STYLE[st] : missed ? "border-red-300/60 bg-red-50/60 text-red-700 hover:bg-red-50" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                <span>{Number(date.slice(-2))}</span>
+                {e && <span className="text-[9px] uppercase tracking-wide">{workedDay(e.status) ? `${st} · ${e.total_hours ?? e.hours ?? 0}h` : statusLabel(e.status)}</span>}
+                {missed && <span className="text-[9px] uppercase tracking-wide">missing</span>}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap gap-4 mt-5 text-xs text-slate-500">
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-200 border border-emerald-400/50" /> Approved</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-amber-200 border border-amber-400/50" /> Pending approval</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-rose-200 border border-rose-400/50" /> Rejected</span>
+          <span className="flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-red-100 border border-red-400/60" /> Missing</span>
+        </div>
+      </div>
 
       {approvals.length > 0 && (
         <section data-testid="timesheet-approvals-section">
@@ -348,7 +575,19 @@ export default function Timesheet() {
           <DialogHeader>
             <DialogTitle className="font-display">Timesheet — {selected}</DialogTitle>
           </DialogHeader>
-          {entries[selected]?.approval_status === "approved" ? (
+          {viewUser ? (
+            entries[selected] ? (
+              <div>
+                <p className="text-sm text-slate-500 mb-3 capitalize">
+                  {statusLabel(entries[selected].status)} · {entries[selected].approval_status}
+                  {entries[selected].comments ? ` · ${entries[selected].comments}` : ""}
+                </p>
+                <TaskBreakdown entry={entries[selected]} />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">No timesheet was submitted for this day.</p>
+            )
+          ) : entries[selected]?.approval_status === "approved" ? (
             <div>
               <p className="text-sm text-slate-500 mb-3">This day is approved and locked.</p>
               <TaskBreakdown entry={entries[selected]} />

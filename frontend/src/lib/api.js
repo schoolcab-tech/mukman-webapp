@@ -2,7 +2,12 @@ import axios from "axios";
 
 // Unset on Vercel so requests stay on this site at /api, which proxies to Supabase.
 // Set to http://localhost:8000 for the Python API, or the local functions URL for Supabase.
-const root = process.env.REACT_APP_BACKEND_URL ?? "";
+// A production build must never call the developer's machine, even if that local URL was present at build time.
+const configured = process.env.REACT_APP_BACKEND_URL ?? "";
+const root =
+  process.env.NODE_ENV === "production" && /localhost|127\.0\.0\.1/.test(configured)
+    ? ""
+    : configured;
 const headers = {};
 const anonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
 if (anonKey) {

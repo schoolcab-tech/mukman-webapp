@@ -23,7 +23,9 @@ import {
   feedbackRow,
   istDate,
   isUuid,
+  addDays,
   monthBounds,
+  overdueTimesheets,
   periodRange,
   readCookie,
   reviewRow,
@@ -230,7 +232,9 @@ async function dispatch(req: Request, supabase: ReturnType<typeof client>, path:
 
   if (method === "POST" && path === "/timesheets") return submitTimesheet(req, supabase);
   if (method === "GET" && path === "/timesheets/my") return myTimesheets(req, supabase, url);
+  if (method === "GET" && path === "/timesheets/reportee") return reporteeTimesheets(req, supabase, url);
   if (method === "GET" && path === "/timesheets/approvals") return timesheetApprovals(req, supabase);
+  if (method === "GET" && path === "/timesheets/gaps") return timesheetGaps(req, supabase);
   if (method === "GET" && path === "/timesheets/export") return exportTimesheets(req, supabase, url);
   const timesheetReview = path.match(/^\/timesheets\/([^/]+)\/(approve|reject)$/);
   if (method === "POST" && timesheetReview) return reviewTimesheet(req, supabase, timesheetReview[1], timesheetReview[2]);
@@ -519,15 +523,64 @@ async function myTimesheets(req: Request, supabase: ReturnType<typeof client>, u
   return json(data || []);
 }
 
-async function timesheetApprovals(req: Request, supabase: ReturnType<typeof client>) {
+async function reporteeTimesheets(req: Request, supabase: ReturnType<typeof client>, url: URL) {
+  const user = await currentUser(req, supabase);
+  const userId = url.searchParams.get("user_id") || "";
+  if (!isUuid(userId)) throw new HttpError(400, "Choose a reportee");
+  const { data: people, error: peopleError } = await supabase
+    .from("users")
+    .select("id,name,reports_to,also_reports_to,role")
+    .limit(500);
+  fail(peopleError);
+  const allowed = exportScope(people || [], user.id, user.role).some((person) => String(person.id) === userId);
+  if (!allowed) throw new HttpError(403, "You can only view timesheets of people who report to you");
+  let query = supabase.from("timesheets").select("*").eq("user_id", userId);
+  const bounds = monthBounds(url.searchParams.get("month") || "");
+  if (bounds) query = query.gte("date", bounds.start).lte("date", bounds.end);
+  const { data, error } = await query.order("date", { ascending: false }).limit(400);
+  fail(error);
+  return json(data || []);
+}
+
+async function timesheetGaps(req: Request, supabase: ReturnType<typeof client>) {
   const user = await currentUser(req, supabase);
   const { data, error } = await supabase
-    .from("timesheets")
-    .select("*")
-    .eq("approver_id", user.id)
-    .eq("approval_status", "pending")
-    .order("date", { ascending: false })
-    .limit(400);
+    .from("users")
+    .select("id,name,reports_to,also_reports_to,role,created_at")
+    .eq("active", true)
+    .limit(500);
+  fail(error);
+  const people = data || [];
+  const scope = exportScope(people, user.id, user.role);
+  const seen = new Set<string>();
+  const watched = [];
+  for (const person of people) {
+    if (String(person.id) !== String(user.id)) continue;
+    watched.push(person);
+    seen.add(String(person.id));
+  }
+  for (const person of scope) {
+    const id = String(person.id);
+    if (seen.has(id)) continue;
+    watched.push(person);
+    seen.add(id);
+  }
+  const today = istDate();
+  const ids = watched.map((person) => person.id);
+  const entries = ids.length
+    ? await selectAll(
+      () => supabase.from("timesheets").select("user_id,date").in("user_id", ids).gte("date", addDays(today, -800)).lte("date", today).order("date", { ascending: false }),
+      20000,
+    )
+    : [];
+  return json(overdueTimesheets(watched, entries, today));
+}
+
+async function timesheetApprovals(req: Request, supabase: ReturnType<typeof client>) {
+  const user = await currentUser(req, supabase);
+  let query = supabase.from("timesheets").select("*").eq("approval_status", "pending");
+  if (user.role !== "admin") query = query.eq("approver_id", user.id);
+  const { data, error } = await query.order("date", { ascending: false }).limit(400);
   fail(error);
   return json(data || []);
 }
@@ -577,7 +630,14 @@ async function exportTimesheets(req: Request, supabase: ReturnType<typeof client
     .limit(500);
   fail(error);
   const people = data || [];
-  const scope = exportScope(people, user.id, user.role);
+  let scope = exportScope(people, user.id, user.role);
+  const requested = url.searchParams.get("user_id") || "";
+  if (requested) {
+    if (!isUuid(requested)) throw new HttpError(400, "Choose a person");
+    const person = scope.find((candidate) => String(candidate.id) === requested);
+    if (!person) throw new HttpError(403, "You can only export timesheets of people who report to you");
+    scope = [person];
+  }
   if (!scope.length) throw new HttpError(403, "You have no reportees to export");
   const names = new Map(people.map((person) => [String(person.id), person.name]));
   const ids = scope.map((person) => person.id);
@@ -630,7 +690,10 @@ async function exportTimesheets(req: Request, supabase: ReturnType<typeof client
       widths: FEEDBACK_WIDTHS,
     },
   ]);
-  const filename = `mukman-team-${url.searchParams.get("period") || "month"}-${range.s}-to-${range.e}.xlsx`;
+  const personName = requested ? String(scope[0].name || "person").replace(/[^\w.-]+/g, "-").replace(/^-|-$/g, "") || "person" : "";
+  const filename = requested
+    ? `mukman-${personName}-${range.s}-to-${range.e}.xlsx`
+    : `mukman-team-${url.searchParams.get("period") || "month"}-${range.s}-to-${range.e}.xlsx`;
   return new Response(bytes, {
     headers: {
       "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
